@@ -1,0 +1,13 @@
+lib
+lib/core
+*.ts
+tsconfig.json
+.vscode
+test
+.gitignore
+.npmignore
+node_modules
+yarn.lock
+package-lock.json
+.eslintrc.js
+.eslintignore
