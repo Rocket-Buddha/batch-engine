@@ -93,7 +93,7 @@ export default abstract class BatchStep {
     // If it failed it returns bad input.
     const stepCurrentState: StepExecutionResult = this.getCurrentStepStatus(null,
       STEP_RESULT_STATUS.BAD_INPUT);
-      // @todo Implement common exceptions for the framework.
+    // @todo Implement common exceptions for the framework.
     stepCurrentState.setError = new Error('Bad step input.');
     debuglog('STEP-EXEC-BAD-INPUT', stepCurrentState);
     return stepCurrentState;
@@ -102,7 +102,7 @@ export default abstract class BatchStep {
   /**
    * Execute the previous logic for client step definition.
    */
-  private async executeClientStep() : Promise<StepExecutionResult> {
+  private async executeClientStep(): Promise<StepExecutionResult> {
     // First we need to fix the state of the step and reset the aggregator.
     // Because we will do async things and the state of the step could be changed.
     const stepCurrentState: StepExecutionResult = this.getCurrentStepStatus();
@@ -112,7 +112,7 @@ export default abstract class BatchStep {
       const payload = await this.step(stepCurrentState.getAccPayload);
       stepCurrentState.setOutputPayload = payload;
       if (this.successor != null
-                && this.successor !== undefined) {
+        && this.successor !== undefined) {
         // Set status.
         stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
         debuglog('STEP-EXEC-SUCCESSFUL-AND-NEXT-STEP', stepCurrentState);
@@ -134,7 +134,7 @@ export default abstract class BatchStep {
   /**
    * Execute resume at the end of batch exec to process the accumulated records in aggregators.
    */
-  public resume() : Promise<StepExecutionResult> {
+  public resume(): Promise<StepExecutionResult> {
     return this.executeClientStep();
   }
 
@@ -144,11 +144,11 @@ export default abstract class BatchStep {
    */
   private static isPreviousStepResultValid(prevStepResult: StepExecutionResult): Boolean {
     return prevStepResult.getOutputPayload !== null
-            && prevStepResult.getOutputPayload !== undefined
-            && prevStepResult.getDependentRecords !== null
-            && prevStepResult.getDependentRecords !== undefined
-            && prevStepResult.getDependentRecords.length > 0
-            && prevStepResult.getStepResultStatus === STEP_RESULT_STATUS.SUCCESSFUL;
+      && prevStepResult.getOutputPayload !== undefined
+      && prevStepResult.getDependentRecords !== null
+      && prevStepResult.getDependentRecords !== undefined
+      && prevStepResult.getDependentRecords.length > 0
+      && prevStepResult.getStepResultStatus === STEP_RESULT_STATUS.SUCCESSFUL;
   }
 
   /**
@@ -224,7 +224,7 @@ export default abstract class BatchStep {
   /**
    * Get the total quantity of steps in the chain.
    */
-  public getStepsCount() : number {
+  public getStepsCount(): number {
     if (this.successor === null
       || this.successor === undefined) {
       return 1;

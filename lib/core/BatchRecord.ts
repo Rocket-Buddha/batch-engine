@@ -49,7 +49,7 @@ export default class BatchRecord {
   /**
    * Get Id.
    */
-  public get getId() :String {
+  public get getId(): String {
     return this.id;
   }
 
