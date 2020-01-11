@@ -120,7 +120,7 @@ export default abstract class BatchJob {
   /**
    *  Method used to start batch execution.
    */
-  public run() : void{
+  public run(): void {
     // Do common and client defined pre all exec tasks.
     this.doPreBatchCommonTasks();
     this.doPreBatchTasks();
@@ -155,16 +155,16 @@ export default abstract class BatchJob {
       const batchRecord: BatchRecord | null = this.getNext();
       // Check available currency and batch record.
       if (this.isConcurrencyAvailable()
-                && batchRecord != null) {
+        && batchRecord != null) {
         // Do pre and post step common tasks and execute the step chain.
         this.doPreCommonRecordTasks(batchRecord);
         debuglog(`EXECUTING-NEW-RECORD (CONCURRENCY: ${this.currentConcurrency}): `, batchRecord);
         await this.executeRecordSteps(batchRecord);
         this.doPostCommonRecordTasks();
-      // If we don't have more records to process and the concurrency is 0,
-      // the batch process has finished.
+        // If we don't have more records to process and the concurrency is 0,
+        // the batch process has finished.
       } else if (this.currentConcurrency <= 0
-                && batchRecord === null) {
+        && batchRecord === null) {
         // We have to resume accumulated records in aggregators and update exec status,
         // using record exec result.
         this.status.updateAddingStepExecResult(await this.stepsChain.resume());
@@ -211,7 +211,7 @@ export default abstract class BatchJob {
       null,
       batchRecord.getObject);
     // Have to update exec status, using record exec result.
-    const returnedResult : StepExecutionResult = await this.stepsChain.execute(bootStrapStepResult);
+    const returnedResult: StepExecutionResult = await this.stepsChain.execute(bootStrapStepResult);
     this.status.updateAddingStepExecResult(returnedResult);
 
     if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED
@@ -247,5 +247,5 @@ export default abstract class BatchJob {
    * To be implemented for clients to handle errors during step execution.
    * @param error The error.
    */
-  protected abstract handleError(error: Error) : void;
+  protected abstract handleError(error: Error): void;
 }

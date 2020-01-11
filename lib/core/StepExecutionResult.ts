@@ -97,7 +97,7 @@ export class StepExecutionResult {
     return this.id;
   }
 
-  public get getOutputPayload(): Object | null{
+  public get getOutputPayload(): Object | null {
     return this.outputPayload;
   }
 
@@ -111,14 +111,14 @@ export class StepExecutionResult {
   /**
    * Get the step result status.
    */
-  public get getStepResultStatus(): STEP_RESULT_STATUS | null{
+  public get getStepResultStatus(): STEP_RESULT_STATUS | null {
     return this.stepResultStatus;
   }
 
   /**
    * Get the accumulated payload.
    */
-  public get getAccPayload(): Array<Object> | null{
+  public get getAccPayload(): Array<Object> | null {
     return this.accPayload;
   }
 
