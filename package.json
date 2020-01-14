@@ -5,7 +5,7 @@
     "test": "./node_modules/mocha/bin/mocha ./test/unit/ --recursive"
   },
   "name": "batch-engine",
-  "version": "1.0.0-alpha0",
+  "version": "1.0.0-alpha3",
   "description": "Ultra lightweight, asynchronous and fault tolerant batch engine for file processing.",
   "keywords": [
     "batch",
@@ -27,7 +27,12 @@
     "type": "git",
     "url": "https://github.com/Rocket-Buddha/batch-engine.git"
   },
-  "contributors": [],
+  "contributors": [
+    {
+      "name": "Eduardo David Angeleri",
+      "email": "angeleridavid@gmail.com"
+    }
+  ],
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^13.1.1",

@@ -75,6 +75,12 @@ export class BatchStatus {
   // Dictionary to get all the data about one step execution result.
   private stepExecResultToRecords: { [stepExecResultId: string]: StepExecutionResult; } = {};
 
+  private filePath!: String;
+
+  private fileName!: String;
+
+  private execType!: String;
+
   /**
    * Update the status adding the last step execution result.
    * @param stepExecResult The execution result.
@@ -116,10 +122,13 @@ export class BatchStatus {
   /**
    * Batch execution tasks.
    */
-  public startBatchExecution(): void {
+  public startBatchExecution(execType: String): void {
+    this.execType = execType;
     this.status = BATCH_STATUS.PROCESSING;
     this.startDate = Date.now();
     this.startDateISO = (new Date()).toISOString();
+    this.filePath = `${process.cwd()}/${this.execType}-${this.batchName}-${this.startDateISO}/`;
+    this.fileName = `${this.execType}-${this.batchName}-${this.startDateISO}.json`;
     this.save();
   }
 
@@ -153,7 +162,12 @@ export class BatchStatus {
    * Save the status of the current execution in a file.
    */
   private save() {
-    fs.writeFileSync(`${this.batchName}-${this.startDateISO}.json`, JSON.stringify(this));
+    if (!fs.existsSync(this.filePath.valueOf())) {
+      fs.mkdirSync(this.filePath.valueOf(), { recursive: true });
+    }
+    fs.writeFileSync(this.filePath.valueOf()
+      + this.fileName.valueOf(),
+    JSON.stringify(this));
   }
 
   /**

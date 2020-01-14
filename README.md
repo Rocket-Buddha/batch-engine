@@ -3,7 +3,7 @@
 
 Ultra-lightweight, asynchronous and fault-tolerant batch engine for file processing with concurrency control.
 
-[![Build Status](https://github.com/Rocket-Buddha/batch-engine/workflows/Node%20CI/badge.svg)](https://github.com/Rocket-Buddha/batch-engine/actions)
+[![Build Status](https://github.com/Rocket-Buddha/batch-engine/workflows/batch-engine-ci/badge.svg)](https://github.com/Rocket-Buddha/batch-engine/actions)
 [![NPM version](https://badge.fury.io/js/batch-engine.svg)](http://badge.fury.io/js/batch-engine)
 
 [![npm](https://nodei.co/npm/batch-engine.png)](https://www.npmjs.com/package/batch-engine)
@@ -18,7 +18,7 @@ $ npm i batch-engine
 
 ```js
 const { BatchStep } = require("batch-engine");
-const  {BatchJob } = require("batch-engine");
+const { BatchJob } = require("batch-engine");
 const { BatchRecord } = require("batch-engine");
 const LineByLine = require("n-readlines");
 
@@ -26,7 +26,7 @@ class MyBatchJob extends BatchJob {
 
     doPreBatchTasks() {
         this.myLineByLine
-            = new LineByLine('/Users/alusi/nodejs/batch/batch-engine-examples/set-timeouts-steps/persons.csv');
+            = new LineByLine('/path/to/your/file.csv');
     }
 
     getNext() {
@@ -54,20 +54,20 @@ class MyBatchJob extends BatchJob {
     }
 
     doPostBatchTasks() {
-        //To do after batch execution.
+        //this.myLineByLine.close();
     }
 
     handleError(error) {
-        //to handle batch execution errors.
+        //console.log(error);
     }
 
 }
 
 class MyBatchStep extends BatchStep {
-    
+
     async step(previousStepPayloadAcc) {
-        
-       return new Promise((resolve, reject) => {
+
+        return new Promise((resolve, reject) => {
             setTimeout(() => {
                 if (Math.random() < 0.05) {
                     reject({
@@ -82,9 +82,6 @@ class MyBatchStep extends BatchStep {
             }, Math.random() * 7000);
         });
     }
-
-    
-
 }
 
 class Person {
@@ -121,13 +118,12 @@ class Person {
 (new MyBatchJob.Builder(MyBatchJob))
     .concurrency(10)
     .name('people-loader')
-    .addStep(new MyBatchStep("el timeout", 1, 2))
+    .addStep(new MyBatchStep("timeout step", 1, 2))
     .build()
     .run();
 ```
 
 ## License
-
 
 Copyright (c) 2020 contributors (cf. CONTRIBUTORS.md).
 
