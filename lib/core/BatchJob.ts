@@ -122,7 +122,7 @@ export default abstract class BatchJob {
    */
   public run(): void {
     // Do common and client defined pre all exec tasks.
-    this.doPreBatchCommonTasks();
+    this.doPreBatchCommonTasks('RUN');
     this.doPreBatchTasks();
     // Start async all the workers until max concurrency.
     for (let i = 0; i < this.maxConcurrency; i += 1) {
@@ -133,8 +133,8 @@ export default abstract class BatchJob {
   /**
    *  Execute common pre batch tasks.
    */
-  private doPreBatchCommonTasks(): void {
-    this.status.startBatchExecution();
+  private doPreBatchCommonTasks(execType: String): void {
+    this.status.startBatchExecution(execType);
   }
 
   /*
@@ -264,7 +264,13 @@ export default abstract class BatchJob {
       this.status = nextStatus;
       this.moveToRecord(this.status.getProcessedRecords);
       debuglog(`EXECUTING-BATCH-RECOVER (UP TO RECORD NUMBER: ${this.status.getProcessedRecords})`);
-      this.run();
+      // Do common and client defined pre all exec tasks.
+      this.doPreBatchCommonTasks('RECOVER');
+      this.doPreBatchTasks();
+      // Start async all the workers until max concurrency.
+      for (let i = 0; i < this.maxConcurrency; i += 1) {
+        this.doNextObj();
+      }
     } else {
       throw (new Error(`Batch recover is only for interrupted executions. File status: ${nextStatus.getStatus}`));
     }
