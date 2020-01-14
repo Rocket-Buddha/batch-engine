@@ -34,7 +34,7 @@ import * as OS from 'os';
 import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
 import BatchStep from './BatchStep';
 import BatchRecord from './BatchRecord';
-import BatchStatus from './BatchStatus';
+import { BatchStatus, BATCH_STATUS } from './BatchStatus';
 // Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
 
@@ -167,7 +167,9 @@ export default abstract class BatchJob {
         && batchRecord === null) {
         // We have to resume accumulated records in aggregators and update exec status,
         // using record exec result.
-        this.status.updateAddingStepExecResult(await this.stepsChain.resume());
+        this.status.updateAddingStepExecResult(
+          await this.stepsChain.resume(this.stepsChain.getStepsCount()),
+        );
         this.doPostCommonBatchTasks();
         this.doPostBatchTasks();
       }
@@ -248,4 +250,29 @@ export default abstract class BatchJob {
    * @param error The error.
    */
   protected abstract handleError(error: Error): void;
+
+
+  /**
+   * Method used to recover an interrupted execution.
+   * @param statusPath The execution batch status file path.
+   */
+  public recover(statusPath: String): void {
+    // Load the status with previous batch status state.
+    const nextStatus: BatchStatus = BatchStatus.load(statusPath);
+    // We have to check that we are talking about interrupted execution.
+    if (nextStatus.getStatus === BATCH_STATUS.PROCESSING) {
+      this.status = nextStatus;
+      this.moveToRecord(this.status.getProcessedRecords);
+      debuglog(`EXECUTING-BATCH-RECOVER (UP TO RECORD NUMBER: ${this.status.getProcessedRecords})`);
+      this.run();
+    } else {
+      throw (new Error(`Batch recover is only for interrupted executions. File status: ${nextStatus.getStatus}`));
+    }
+  }
+
+  /**
+   * Method to be implemented by client to move the cursor until some record number.
+   * @param recordNumber The objective record number.
+   */
+  protected abstract moveToRecord(recordNumber: number): void;
 }

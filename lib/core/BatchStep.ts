@@ -72,7 +72,8 @@ export default abstract class BatchStep {
    * Execute the step in the chain.
    * @param previousStepResult The previous step result.
    */
-  public async execute(previousStepResult: StepExecutionResult): Promise<StepExecutionResult> {
+  public async execute(previousStepResult: StepExecutionResult,
+    resumeFlagCount: number = 0): Promise<StepExecutionResult> {
     // Check is the previous step result is valid.
     if (BatchStep.isPreviousStepResultValid(previousStepResult)) {
       // Add the previous dependent records to this dependant records.
@@ -81,8 +82,9 @@ export default abstract class BatchStep {
       this.addPreviousStepPayloadAcc(previousStepResult.getOutputPayload);
       // Check how many records have we to aggregate here.
       // If we have enoughs we have to execute the step.
-      if (this.previousStepPayloadAcc.length >= this.aggregationQuantity) {
-        return this.executeClientStep();
+      if (this.previousStepPayloadAcc.length >= this.aggregationQuantity
+        || resumeFlagCount > 0) {
+        return this.executeClientStep(resumeFlagCount - 1);
       }
       // Else, returns that we are accumulating.
       const stepCurrentState: StepExecutionResult = this.getCurrentStepStatus(null,
@@ -102,7 +104,7 @@ export default abstract class BatchStep {
   /**
    * Execute the previous logic for client step definition.
    */
-  private async executeClientStep(): Promise<StepExecutionResult> {
+  private async executeClientStep(resumeFlagCount: number = 0): Promise<StepExecutionResult> {
     // First we need to fix the state of the step and reset the aggregator.
     // Because we will do async things and the state of the step could be changed.
     const stepCurrentState: StepExecutionResult = this.getCurrentStepStatus();
@@ -116,14 +118,14 @@ export default abstract class BatchStep {
         // Set status.
         stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
         debuglog('STEP-EXEC-SUCCESSFUL-AND-NEXT-STEP', stepCurrentState);
-        return await this.successor.execute(stepCurrentState);
+        return await this.successor.execute(stepCurrentState, resumeFlagCount);
       }
       // If this is last step in the chain, return success last one and log last step.
       stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL_LAST_ONE;
       debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE', stepCurrentState);
       return stepCurrentState;
     } catch (error) {
-      // If the was an error, return failed an log.
+      // If there was an error, return failed an log.
       stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.FAILED;
       stepCurrentState.setError = error;
       debuglog('STEP-EXEC-FAILED', stepCurrentState);
@@ -134,8 +136,8 @@ export default abstract class BatchStep {
   /**
    * Execute resume at the end of batch exec to process the accumulated records in aggregators.
    */
-  public resume(): Promise<StepExecutionResult> {
-    return this.executeClientStep();
+  public resume(resumeFlagCount: number = 1): Promise<StepExecutionResult> {
+    return this.executeClientStep(resumeFlagCount - 1);
   }
 
   /**

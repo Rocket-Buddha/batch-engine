@@ -29,21 +29,29 @@
 import * as fs from 'fs';
 import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
 
+// Batch status status enum.
+export enum BATCH_STATUS {
+  STOPPED,
+  PROCESSING,
+  FINISHED_ERRORS,
+  FINISHED_SUCCESSFULLY
+}
+
 /**
  * The Class that define all batch execution status.
  */
-export default class BatchStatus {
+export class BatchStatus {
   // The batch name.
   private batchName!: String;
 
   // The current batch execution status.
-  private status: String = 'STOPPED';
+  private status: BATCH_STATUS = BATCH_STATUS.STOPPED;
 
   // What was the last loaded record,
   // it could be useful to recover an failed an interrupted execution.
   private lastLoadedRecord!: String;
 
-  // The quantity of processed records.
+  // The quantity of processed (not successfully only loaded) records.
   private processedRecords: number = 0;
 
   // The execution start date in unix number format.
@@ -109,7 +117,7 @@ export default class BatchStatus {
    * Batch execution tasks.
    */
   public startBatchExecution(): void {
-    this.status = 'PROCESSING';
+    this.status = BATCH_STATUS.PROCESSING;
     this.startDate = Date.now();
     this.startDateISO = (new Date()).toISOString();
     this.save();
@@ -128,7 +136,13 @@ export default class BatchStatus {
    * End batch execution tasks.
    */
   public endBatchExecution(): void {
-    this.status = 'FINISHED';
+    if (Object.keys(this.recordsToStepExecResult).length > 0
+      || Object.keys(this.stepExecResultToRecords).length > 0) {
+      this.status = BATCH_STATUS.FINISHED_ERRORS;
+    } else {
+      this.status = BATCH_STATUS.FINISHED_SUCCESSFULLY;
+    }
+
     this.endDate = Date.now();
     this.endDateISO = (new Date()).toISOString();
     this.duration = (Date.now() - this.startDate) / 1000;
@@ -140,5 +154,29 @@ export default class BatchStatus {
    */
   private save() {
     fs.writeFileSync(`${this.batchName}-${this.startDateISO}.json`, JSON.stringify(this));
+  }
+
+  /**
+   * Uses to load a batch execution status from a status file.
+   * @param statusPath The path to the status file.
+   */
+  public static load(statusPath: String): BatchStatus {
+    const fileString = fs.readFileSync(statusPath.valueOf()).toString();
+    const loadedBatchStatus: BatchStatus = JSON.parse(fileString);
+    return loadedBatchStatus;
+  }
+
+  /**
+   * Get the loaded records of this status.
+   */
+  public get getProcessedRecords() {
+    return this.processedRecords;
+  }
+
+  /**
+   * Get the status of this status.
+   */
+  public get getStatus() {
+    return this.status;
   }
 }

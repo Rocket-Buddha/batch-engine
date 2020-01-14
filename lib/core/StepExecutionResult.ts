@@ -149,4 +149,18 @@ export class StepExecutionResult {
   public get getError(): Error {
     return this.error;
   }
+
+  /**
+   * Get the step number of the step.
+   */
+  public get getStepNumber(): number {
+    return this.stepNumber;
+  }
+
+  /**
+   * Get the step name of the step.
+   */
+  public get getStepName(): String {
+    return this.stepName;
+  }
 }
