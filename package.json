@@ -6,7 +6,7 @@
   },
   "name": "batch-engine",
   "version": "1.0.0-alpha3",
-  "description": "Ultra lightweight, asynchronous and fault tolerant batch engine for file processing.",
+  "description": "Ultra-lightweight, asynchronous and fault-tolerant batch engine for file processing with concurrency control.",
   "keywords": [
     "batch",
     "processor",
@@ -50,6 +50,7 @@
     "typescript": "^3.7.4"
   },
   "dependencies": {
+    "level": "^6.0.0",
     "uuid": "3.3.3"
   }
 }

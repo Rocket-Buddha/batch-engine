@@ -34,9 +34,11 @@ import * as OS from 'os';
 import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
 import BatchStep from './BatchStep';
 import BatchRecord from './BatchRecord';
-import { BatchStatus, BATCH_STATUS } from './BatchStatus';
+import { BatchStatus } from './BatchStatus';
+import PersistanceContext from '../persistence/PersistanceContext';
 // Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
+
 
 /**
  *  Batch Engine main class. This class controls all the execution logic.
@@ -53,9 +55,10 @@ export default abstract class BatchJob {
   // It uses a Chain of Responsibility pattern (https://en.wikipedia.org/wiki/Chain-of-responsibility_pattern).
   private stepsChain!: BatchStep;
 
-  // Attribute used to store the batch execution status at execution time.
-  // It has a lot important data used to understand how to recover a failed batch execution.
-  private status!: BatchStatus;
+  private batchStatus!: BatchStatus;
+
+  private persistanceContext: PersistanceContext = new PersistanceContext();
+
 
   /**
    *  Class used by framework clients to build new BatchJobs easily.
@@ -73,7 +76,6 @@ export default abstract class BatchJob {
      */
     constructor(private TestType: new () => T) {
       this.batchJob = new this.TestType();
-      this.batchJob.status = new BatchStatus();
     }
 
     /**
@@ -81,7 +83,9 @@ export default abstract class BatchJob {
      * @param batchName The batch name.
      */
     public name(batchName: String) {
-      this.batchJob.status.setBatchName = batchName;
+      this.batchJob.batchStatus = new BatchStatus(batchName,
+        this.batchJob.persistanceContext,
+        this.batchJob.handleError);
       return this;
     }
 
@@ -100,10 +104,14 @@ export default abstract class BatchJob {
      */
     public addStep(step: BatchStep) {
       if (this.batchJob.stepsChain === undefined) {
-        step.setNumber(1);
+        // eslint-disable-next-line no-param-reassign
+        step.setNumber = 1;
+        // eslint-disable-next-line no-param-reassign
+        step.setPersistanceContext = this.batchJob.persistanceContext;
         this.batchJob.stepsChain = step;
       } else {
-        step.setNumber(this.batchJob.stepsChain.getStepsCount() + 1);
+        // eslint-disable-next-line no-param-reassign
+        step.setNumber = this.batchJob.stepsChain.getStepsCount() + 1;
         this.batchJob.stepsChain.addSuccessor(step);
       }
       return this;
@@ -133,8 +141,8 @@ export default abstract class BatchJob {
   /**
    *  Execute common pre batch tasks.
    */
-  private doPreBatchCommonTasks(execType: String): void {
-    this.status.startBatchExecution(execType);
+  private  async doPreBatchCommonTasks(execType: String) {
+    await this.batchStatus.startBatchExecution(execType, this.stepsChain.getStepsCount());
   }
 
   /*
@@ -151,27 +159,25 @@ export default abstract class BatchJob {
     // Check (https://eslint.org/docs/rules/no-async-promise-executor).
     // eslint-disable-next-line no-async-promise-executor
     return new Promise(async () => {
-      // Get new record.
+      // Get new record. @todo getnext do it async 
       const batchRecord: BatchRecord | null = this.getNext();
       // Check available currency and batch record.
       if (this.isConcurrencyAvailable()
         && batchRecord != null) {
         // Do pre and post step common tasks and execute the step chain.
-        this.doPreCommonRecordTasks(batchRecord);
+        await this.doPreCommonRecordTasks(batchRecord);
         debuglog(`EXECUTING-NEW-RECORD (CONCURRENCY: ${this.currentConcurrency}): `, batchRecord);
         await this.executeRecordSteps(batchRecord);
-        this.doPostCommonRecordTasks();
+        await this.doPostCommonRecordTasks();
         // If we don't have more records to process and the concurrency is 0,
         // the batch process has finished.
       } else if (this.currentConcurrency <= 0
         && batchRecord === null) {
         // We have to resume accumulated records in aggregators and update exec status,
         // using record exec result.
-        this.status.updateAddingStepExecResult(
-          await this.stepsChain.resume(this.stepsChain.getStepsCount()),
-        );
-        this.doPostCommonBatchTasks();
-        this.doPostBatchTasks();
+        await this.resume();
+        await this.doPostCommonBatchTasks();
+        await this.doPostBatchTasks();
       }
     });
   }
@@ -194,10 +200,11 @@ export default abstract class BatchJob {
    * Common pre record execution tasks.
    * @param batchRecord The bach record to be executed.
    */
-  private doPreCommonRecordTasks(batchRecord: BatchRecord) {
+  private async doPreCommonRecordTasks(batchRecord: BatchRecord) {
     // Increment concurrency and save the record id as the last record loaded in status.
     this.currentConcurrency += 1;
-    this.status.setLastLoadedRecord = batchRecord.getId;
+    await this.batchStatus.addOneToLoadedRecords();
+    await this.batchStatus.setLastLoadedRecordId(batchRecord.getId.valueOf());
   }
 
   /**
@@ -210,15 +217,15 @@ export default abstract class BatchJob {
       0,
       STEP_RESULT_STATUS.SUCCESSFUL,
       [batchRecord.getId],
-      null,
-      batchRecord.getObject);
-    // Have to update exec status, using record exec result.
-    const returnedResult: StepExecutionResult = await this.stepsChain.execute(bootStrapStepResult);
-    this.status.updateAddingStepExecResult(returnedResult);
+      [],
+      batchRecord.getObject,
+      this.persistanceContext);
 
+    const returnedResult: StepExecutionResult = await this.stepsChain.execute(bootStrapStepResult);
     if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED
       || returnedResult.getStepResultStatus === STEP_RESULT_STATUS.BAD_INPUT) {
-      this.handleError(returnedResult.getError);
+      await this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+      await this.handleError(returnedResult.getError);
     }
   }
 
@@ -239,10 +246,10 @@ export default abstract class BatchJob {
   /**
    * Common ended batch tasks.
    */
-  private doPostCommonBatchTasks(): void {
+  private async doPostCommonBatchTasks() {
     // Update batch exec status and debug log.
-    this.status.endBatchExecution();
-    debuglog('BATCH-EXEC-FINISHED', this.status);
+    await this.batchStatus.endBatchExecution();
+    debuglog('BATCH-EXEC-FINISHED', this);
   }
 
   /**
@@ -251,34 +258,21 @@ export default abstract class BatchJob {
    */
   protected abstract handleError(error: Error): void;
 
-
-  /**
-   * Method used to recover an interrupted execution.
-   * @param statusPath The execution batch status file path.
-   */
-  public recover(statusPath: String): void {
-    // Load the status with previous batch status state.
-    const nextStatus: BatchStatus = BatchStatus.load(statusPath);
-    // We have to check that we are talking about interrupted execution.
-    if (nextStatus.getStatus === BATCH_STATUS.PROCESSING) {
-      this.status = nextStatus;
-      this.moveToRecord(this.status.getProcessedRecords);
-      debuglog(`EXECUTING-BATCH-RECOVER (UP TO RECORD NUMBER: ${this.status.getProcessedRecords})`);
-      // Do common and client defined pre all exec tasks.
-      this.doPreBatchCommonTasks('RECOVER');
-      this.doPreBatchTasks();
-      // Start async all the workers until max concurrency.
-      for (let i = 0; i < this.maxConcurrency; i += 1) {
-        this.doNextObj();
-      }
-    } else {
-      throw (new Error(`Batch recover is only for interrupted executions. File status: ${nextStatus.getStatus}`));
-    }
-  }
-
   /**
    * Method to be implemented by client to move the cursor until some record number.
    * @param recordNumber The objective record number.
    */
   protected abstract moveToRecord(recordNumber: number): void;
+
+  private async resume() {
+    const returnedResult: StepExecutionResult = await this.stepsChain
+      .executeClientStep(this.stepsChain
+        .getStepsCount() - 1);
+
+    if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED
+      || returnedResult.getStepResultStatus === STEP_RESULT_STATUS.BAD_INPUT) {
+      await this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+      await this.handleError(returnedResult.getError);
+    }
+  }
 }

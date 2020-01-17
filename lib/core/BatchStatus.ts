@@ -26,171 +26,185 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /** ********************************************************************* */
 
-import * as fs from 'fs';
-import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
+import PersistanceContext from '../persistence/PersistanceContext';
 
 // Batch status status enum.
 export enum BATCH_STATUS {
-  STOPPED,
-  PROCESSING,
-  FINISHED_ERRORS,
-  FINISHED_SUCCESSFULLY
+  NOT_STARTED = 'NOT_STARTED',
+  PROCESSING = 'PROCESSING',
+  FINISHED_WITH_ERRORS = 'FINISHED_WITH_ERRORS',
+  FINISHED_SUCCESSFULLY = 'FINISHED_SUCCESSFULLY'
 }
 
 /**
  * The Class that define all batch execution status.
  */
 export class BatchStatus {
-  // The batch name.
+  private persistanceContext: PersistanceContext;
+
   private batchName!: String;
 
-  // The current batch execution status.
-  private status: BATCH_STATUS = BATCH_STATUS.STOPPED;
+  private loadedRecords: number = 0;
 
-  // What was the last loaded record,
-  // it could be useful to recover an failed an interrupted execution.
-  private lastLoadedRecord!: String;
+  private lastLoadedRecordId: String = '';
 
-  // The quantity of processed (not successfully only loaded) records.
-  private processedRecords: number = 0;
+  private execType: String = 'RUN';
 
-  // The execution start date in unix number format.
+  private status: BATCH_STATUS = BATCH_STATUS.NOT_STARTED;
+
   private startDate!: number;
 
-  // The execution end date in unix number format.
-  private endDate!: number;
-
-  // The execution start date in ISO format.
   private startDateISO!: String;
 
-  // The execution end date in ISO format.
+  private endDate!: number;
+
   private endDateISO!: String;
 
-  // Execution duration time.
-  private duration!: number;
+  private duration: number = 0;
 
-  // Dictionary to get the las step execution result for one record.
-  private recordsToStepExecResult: { [recordId: string]: String; } = {};
+  private failedRecords: number = 0;
 
-  // Dictionary to get all the data about one step execution result.
-  private stepExecResultToRecords: { [stepExecResultId: string]: StepExecutionResult; } = {};
+  private handleError!: Function;
 
-  private filePath!: String;
-
-  private fileName!: String;
-
-  private execType!: String;
-
-  /**
-   * Update the status adding the last step execution result.
-   * @param stepExecResult The execution result.
-   */
-  public updateAddingStepExecResult(stepExecResult: StepExecutionResult): void {
-    // We don't want to save SUCCESSFUL LAST ONES steps executions.
-    // We only want to track unfinished executions in the file.
-    if (stepExecResult.getStepResultStatus !== STEP_RESULT_STATUS.SUCCESSFUL_LAST_ONE) {
-      this.stepExecResultToRecords[stepExecResult.getId.valueOf()] = stepExecResult;
-    }
-
-    /**
-     * But we will update previous data.
-     * For the record, the new step or delete if it is the last one step executed successfully.
-     * And delete all non referenced step executions results. Then save the file.
-     */
-    stepExecResult.getDependentRecords.forEach((item) => {
-      const lastStepExecResId = this.recordsToStepExecResult[item.valueOf()];
-      if (stepExecResult.getStepResultStatus !== STEP_RESULT_STATUS.SUCCESSFUL_LAST_ONE) {
-        this.recordsToStepExecResult[item.valueOf()] = stepExecResult.getId;
-      } else {
-        delete this.recordsToStepExecResult[item.valueOf()];
-      }
-      if (lastStepExecResId !== undefined) {
-        delete this.stepExecResultToRecords[lastStepExecResId.valueOf()];
-      }
-    });
-
-    this.save();
-  }
-
-  /**
-   *  Set the batch name for the status.,
-   */
-  public set setBatchName(batchName: String) {
+  public constructor(batchName: String,
+    persistanceContext: PersistanceContext,
+    errorHandler: Function) {
     this.batchName = batchName;
+    this.persistanceContext = persistanceContext;
+    this.handleError = errorHandler;
   }
 
-  /**
-   * Batch execution tasks.
-   */
-  public startBatchExecution(execType: String): void {
-    this.execType = execType;
-    this.status = BATCH_STATUS.PROCESSING;
-    this.startDate = Date.now();
-    this.startDateISO = (new Date()).toISOString();
-    this.filePath = `${process.cwd()}/${this.execType}-${this.batchName}-${this.startDateISO}/`;
-    this.fileName = `${this.execType}-${this.batchName}-${this.startDateISO}.json`;
-    this.save();
+  public async startBatchExecution(execType: String, stepsCount: number) {
+    await this.persistanceContext.createExecutionPersistanceContext(this.batchName, execType, stepsCount);
+    await this.setBatchName(this.batchName);
+    await this.setExecType(execType);
+    await this.setStatus(BATCH_STATUS.PROCESSING);
+    await this.setStartDate(Date.now());
+    await this.setStartDateISO(new Date().toISOString());
   }
 
-  /**
-   * Set the last loaded record.
-   */
-  public set setLastLoadedRecord(lastLoadedRecord: String) {
-    this.lastLoadedRecord = lastLoadedRecord;
-    this.processedRecords += 1;
-    this.save();
-  }
-
-  /**
-   * End batch execution tasks.
-   */
-  public endBatchExecution(): void {
-    if (Object.keys(this.recordsToStepExecResult).length > 0
-      || Object.keys(this.stepExecResultToRecords).length > 0) {
-      this.status = BATCH_STATUS.FINISHED_ERRORS;
+  public async endBatchExecution() {
+    if (this.failedRecords > 0) {
+      await this.setStatus(BATCH_STATUS.FINISHED_WITH_ERRORS);
     } else {
-      this.status = BATCH_STATUS.FINISHED_SUCCESSFULLY;
+      await this.setStatus(BATCH_STATUS.FINISHED_SUCCESSFULLY);
     }
-
-    this.endDate = Date.now();
-    this.endDateISO = (new Date()).toISOString();
-    this.duration = (Date.now() - this.startDate) / 1000;
-    this.save();
+    await this.setEndDate(Date.now());
+    await this.setEndDateISO((new Date()).toISOString());
+    await this.calculateDuration();
+    this.persistanceContext.closeAllDBs();
   }
 
-  /**
-   * Save the status of the current execution in a file.
-   */
-  private save() {
-    if (!fs.existsSync(this.filePath.valueOf())) {
-      fs.mkdirSync(this.filePath.valueOf(), { recursive: true });
+  public async addOneToLoadedRecords(){
+    try {
+      await this.persistanceContext.putBatchStatusSync('loadedRecords', (this.loadedRecords + 1).toString());
+      this.loadedRecords += 1;
+    } catch (err) {
+      this.handleError(err);
     }
-    fs.writeFileSync(this.filePath.valueOf()
-      + this.fileName.valueOf(),
-    JSON.stringify(this));
   }
 
-  /**
-   * Uses to load a batch execution status from a status file.
-   * @param statusPath The path to the status file.
-   */
-  public static load(statusPath: String): BatchStatus {
-    const fileString = fs.readFileSync(statusPath.valueOf()).toString();
-    const loadedBatchStatus: BatchStatus = JSON.parse(fileString);
-    return loadedBatchStatus;
+  public async addOneFailedRecords(failedRecords: number) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('failedRecords', (this.failedRecords + 1).toString());
+      this.failedRecords += 1;
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
-  /**
-   * Get the loaded records of this status.
-   */
-  public get getProcessedRecords() {
-    return this.processedRecords;
+  public async calculateDuration() {
+    try {
+      const duration: number = Date.now() - this.startDate;
+      await this.persistanceContext.putBatchStatusSync('duration', duration.toString());
+      this.duration = duration;
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
-  /**
-   * Get the status of this status.
-   */
-  public get getStatus() {
-    return this.status;
+  public async setLastLoadedRecordId(lastLoadedRecordId: string) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('lastLoadedRecordID', lastLoadedRecordId);
+      this.lastLoadedRecordId = lastLoadedRecordId;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public async setBatchName(batchName: String) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('batchName', batchName);
+      this.batchName = batchName;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public async setExecType(execType: String) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('execType', execType);
+      this.execType = execType;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public async setStatus(status: BATCH_STATUS) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('status', status.toString());
+      this.status = status;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public async setStartDate(startDate: number) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('startDate', startDate.toString());
+      this.startDate = startDate;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public async setStartDateISO(startDateISO: String) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('startDateISO', startDateISO.valueOf());
+      this.startDateISO = startDateISO;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public async setEndDate(endDate: number) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('endDate', endDate.toString());
+      this.startDate = endDate;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public async setEndDateISO(endDateISO: String) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('endDateISO', endDateISO.valueOf());
+      this.startDateISO = endDateISO;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public async setDuration(duration: number) {
+    try {
+      await this.persistanceContext.putBatchStatusSync('duration', duration.toString());
+      this.duration = duration;
+    } catch (err) {
+      this.handleError(err);
+    }
+  }
+
+  public set setErrorHandler(handle: Function) {
+    this.handleError = handle;
   }
 }

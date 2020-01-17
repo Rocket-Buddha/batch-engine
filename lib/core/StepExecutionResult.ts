@@ -1,3 +1,5 @@
+import PersistanceContext from '../persistence/PersistanceContext';
+
 /** ********************************************************************* */
 /*  StepExecutionResult.ts                                                */
 /** ********************************************************************* */
@@ -31,11 +33,11 @@ const uuidv1 = require('uuid/v1');
 
 // Step status enum.
 export enum STEP_RESULT_STATUS {
-  FAILED,
-  ACCUMULATING,
-  SUCCESSFUL,
-  SUCCESSFUL_LAST_ONE,
-  BAD_INPUT
+  BAD_INPUT = 'BAD_INPUT',
+  FAILED = 'FAILED',
+  ACCUMULATING = 'ACCUMULATING',
+  PROCESSING = 'PROCESSING',
+  SUCCESSFUL = 'SUCCESSFUL'
 }
 
 /**
@@ -43,7 +45,9 @@ export enum STEP_RESULT_STATUS {
  */
 export class StepExecutionResult {
   // The step execution Id, will be UUID.
-  private readonly id: String;
+  // You can use the same StepExecutionResult over the flow, it will be reloaded,
+  // each time that you persist it.
+  private id!: String;
 
   // The step name to be showed in logs.
   private readonly stepName: String;
@@ -58,13 +62,15 @@ export class StepExecutionResult {
   private readonly dependentRecords: Array<String>;
 
   // The accumulated payload that the step had a that time.
-  private readonly accPayload: Array<Object> | null;
+  private readonly accPayload: Array<Object> = [];
 
   // The output payload of the step execution.
   private outputPayload!: Object | null;
 
   // If there was an error, It will be here.
   private error!: Error;
+
+  private persistanceContext: PersistanceContext;
 
   /**
    * Constructor of step execution result.
@@ -79,15 +85,16 @@ export class StepExecutionResult {
     stepNumber: number,
     stepState: STEP_RESULT_STATUS | null,
     dependentRecords: Array<String>,
-    previousStepPayloadAcc: Array<Object> | null,
-    outputPayload: Object | null) {
-    this.id = uuidv1();
+    previousStepPayloadAcc: Array<Object>,
+    outputPayload: Object | null,
+    persistanceContext: PersistanceContext) {
     this.stepName = stepName;
     this.stepNumber = stepNumber;
     this.stepResultStatus = stepState;
     this.dependentRecords = dependentRecords;
     this.accPayload = previousStepPayloadAcc;
     this.outputPayload = outputPayload;
+    this.persistanceContext = persistanceContext;
   }
 
   /**
@@ -118,7 +125,7 @@ export class StepExecutionResult {
   /**
    * Get the accumulated payload.
    */
-  public get getAccPayload(): Array<Object> | null {
+  public get getAccPayload(): Array<Object> {
     return this.accPayload;
   }
 
@@ -162,5 +169,64 @@ export class StepExecutionResult {
    */
   public get getStepName(): String {
     return this.stepName;
+  }
+
+  /**
+   * Update the status adding the last step execution result.
+   */
+  public async updateAddingStepExecResult() {
+    // Have to update the id to be persisted first.
+    this.id = uuidv1();
+    // We don't want to save SUCCESSFUL LAST ONES steps executions.
+    // We only want to track unfinished executions in the file.
+    if (this.stepResultStatus !== STEP_RESULT_STATUS.SUCCESSFUL) {
+      await this.persistanceContext.putStepResultSync(this.getStepNumber,
+        this.getId,
+        JSON.stringify(this.getNiceObjectToLogStepResult()));
+    }
+
+    /**
+     * But we will update previous data.
+     * For the record, the new step or delete if it is the last one step executed successfully.
+     * And delete all non referenced step executions results. Then save the file.
+     */
+    for (let i = 0; i < this.getDependentRecords.length; i += 1) {
+      const recordId = this.getDependentRecords[i];
+      // eslint-disable-next-line no-await-in-loop
+      const lastStepExecResStr: any | null = await this.persistanceContext
+        .getRecordStatus(recordId.valueOf());
+
+      if (this.getStepResultStatus !== STEP_RESULT_STATUS.SUCCESSFUL) {
+        const obj = JSON.stringify(this.getNiceObjectToLogRecord());
+        await this.persistanceContext.putRecordStatusSync(recordId, obj);
+      } else {
+        await this.persistanceContext.delRecordStatus(recordId.valueOf());
+      }
+      if (lastStepExecResStr !== null) {
+        const lastStepExecResObj = JSON.parse(lastStepExecResStr);
+        await this.persistanceContext.delStepResultKey(lastStepExecResObj.step, lastStepExecResObj.id);
+      }
+    }
+  }
+
+  public getNiceObjectToLogRecord(): Object {
+    return {
+      step: this.getStepNumber,
+      id: this.getId,
+      status: this.getStepResultStatus,
+    }
+  }
+
+  public getNiceObjectToLogStepResult(): Object {
+    return {
+      id: this.id,
+      stepName: this.stepName,
+      stepNumber: this.stepNumber,
+      status: this.stepResultStatus,
+      dependentRecords: this.dependentRecords,
+      accPayload: this.accPayload,
+      outPutPayload: this.outputPayload,
+      error: this.error
+    }
   }
 }

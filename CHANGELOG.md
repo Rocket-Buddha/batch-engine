@@ -14,3 +14,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
   - Client error handling API.
   - Batch execution status report.
   - Recovery API.
+  - Retry API.
+  - Batch execution resume.
+- Debug Features.
+- LevelDb persistance layer for transactional data.
+- CI pipeline kickoff.
+  - Code static check, style and code smells, with eslint.
+  - Unit testing kickoff coverage.

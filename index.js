@@ -1,6 +1,6 @@
 
 "use strict";
 
-exports.BatchJob = require('./build/BatchJob').default;
-exports.BatchStep = require('./build/BatchStep').default;
-exports.BatchRecord = require('./build/BatchRecord').default;
+exports.BatchJob = require('./build/core/BatchJob').default;
+exports.BatchStep = require('./build/core/BatchStep').default;
+exports.BatchRecord = require('./build/core/BatchRecord').default;
