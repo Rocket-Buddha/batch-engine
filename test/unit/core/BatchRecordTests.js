@@ -1,5 +1,5 @@
 const assert = require('chai').assert;
-const BatchRecord = require('../../../build/BatchRecord').default;
+const BatchRecord = require('../../../build/core/BatchRecord').default;
 
 describe('BatchRecord Class:', () => {
 
