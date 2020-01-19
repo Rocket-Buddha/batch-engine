@@ -26,13 +26,17 @@ class MyBatchJob extends BatchJob {
 
     doPreBatchTasks() {
         this.myLineByLine
-            = new LineByLine('/path/to/your/file.csv');
+            = new LineByLine('/file/path/to/your/file.csv');
     }
 
-    getNext() {
+    async getNext() {
         const next = this.myLineByLine.next();
         if (next) {
-            const data = next.toString().replace(/["']/g, "").replace('\r', '').split(',');
+
+            const data = next.toString().replace(/["']/g, "")
+                .replace('\r', '')
+                .split(',');
+
             const nextPerson = new Person(data[0],
                 data[1],
                 data[2],
@@ -49,8 +53,15 @@ class MyBatchJob extends BatchJob {
 
             return new BatchRecord(nextPerson.id, nextPerson);
         }
-
         return null;
+    }
+
+    async moveToRecord(recordNumber) {
+
+        for (let i = 0; i < recordNumber; i++) {
+            this.getNext();
+        }
+
     }
 
     doPostBatchTasks() {
@@ -115,13 +126,24 @@ class Person {
     }
 }
 
+// Run 
 (new MyBatchJob.Builder(MyBatchJob))
-    .concurrency(10)
+    .concurrency(5)
     .name('people-loader')
-    .addStep(new MyBatchStep("timeout step", 1, 2))
+    .addStep(new MyBatchStep("el timeout", 1))
     .build()
     .run();
+
+// Recover interrupted execution
+(new MyBatchJob.Builder(MyBatchJob))
+    .concurrency(50)
+    .name('people-loader')
+    .addStep(new MyBatchStep("el timeout", 1))
+    .build()
+    .recover('people-loader-[RUN]-2020-01-19T15:38:16.458Z');
 ```
+## Debug
+TODO.
 
 ## License
 

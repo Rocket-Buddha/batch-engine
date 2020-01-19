@@ -34,8 +34,9 @@ import * as OS from 'os';
 import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
 import BatchStep from './BatchStep';
 import BatchRecord from './BatchRecord';
-import { BatchStatus } from './BatchStatus';
+import BatchStatus from './BatchStatus';
 import PersistanceContext from '../persistence/PersistanceContext';
+import { BATCH_STATUS } from './BATCH_STATUS';
 // Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
 
@@ -128,10 +129,10 @@ export default abstract class BatchJob {
   /**
    *  Method used to start batch execution.
    */
-  public run(): void {
+  public async run() {
     // Do common and client defined pre all exec tasks.
-    this.doPreBatchCommonTasks('RUN');
-    this.doPreBatchTasks();
+    await this.doPreBatchCommonTasks('RUN');
+    await this.doPreBatchTasks();
     // Start async all the workers until max concurrency.
     for (let i = 0; i < this.maxConcurrency; i += 1) {
       this.doNextObj();
@@ -141,7 +142,7 @@ export default abstract class BatchJob {
   /**
    *  Execute common pre batch tasks.
    */
-  private  async doPreBatchCommonTasks(execType: String) {
+  private async doPreBatchCommonTasks(execType: String) {
     await this.batchStatus.startBatchExecution(execType, this.stepsChain.getStepsCount());
   }
 
@@ -159,8 +160,8 @@ export default abstract class BatchJob {
     // Check (https://eslint.org/docs/rules/no-async-promise-executor).
     // eslint-disable-next-line no-async-promise-executor
     return new Promise(async () => {
-      // Get new record. @todo getnext do it async 
-      const batchRecord: BatchRecord | null = this.getNext();
+      // Get new record.
+      const batchRecord: BatchRecord | null = await this.getNext();
       // Check available currency and batch record.
       if (this.isConcurrencyAvailable()
         && batchRecord != null) {
@@ -187,7 +188,7 @@ export default abstract class BatchJob {
    *  from the source that the client wants to get for batch execution.
    *  It has to return a null when there are no more records.
    */
-  protected abstract getNext(): BatchRecord | null;
+  protected abstract async getNext(): Promise<BatchRecord | null>;
 
   /**
    * Method to check if is there concurrency available to start a new record execution.
@@ -262,7 +263,7 @@ export default abstract class BatchJob {
    * Method to be implemented by client to move the cursor until some record number.
    * @param recordNumber The objective record number.
    */
-  protected abstract moveToRecord(recordNumber: number): void;
+  protected abstract async moveToRecord(recordNumber: number): Promise<void>;
 
   private async resume() {
     const returnedResult: StepExecutionResult = await this.stepsChain
@@ -273,6 +274,30 @@ export default abstract class BatchJob {
       || returnedResult.getStepResultStatus === STEP_RESULT_STATUS.BAD_INPUT) {
       await this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
       await this.handleError(returnedResult.getError);
+    }
+  }
+
+  /**
+   * Method used to recover an interrupted execution.
+   * @param statusPath The execution batch status file path.
+   */
+  public async recover(statusPath: String) {
+    // Load the status with previous batch status state.
+    const previousStatus: BatchStatus = new BatchStatus('', new PersistanceContext(), this.handleError);
+    await previousStatus.load(statusPath);
+    // We have to check that we are talking about interrupted execution.
+    if (previousStatus.getStatus === BATCH_STATUS.PROCESSING) {
+      debuglog(`EXECUTING-BATCH-RECOVER (UP TO RECORD NUMBER: ${previousStatus.getLoadedRecords})`);
+      // Do common and client defined pre all exec tasks.
+      await this.doPreBatchCommonTasks(`RECOVER-${statusPath}-FROM-RECORD: ${previousStatus.getLoadedRecords}`);
+      await this.doPreBatchTasks();
+      await this.moveToRecord(previousStatus.getLoadedRecords);
+      // Start async all the workers until max concurrency.
+      for (let i = 0; i < this.maxConcurrency; i += 1) {
+        this.doNextObj();
+      }
+    } else {
+      throw (new Error(`Batch recover is only for interrupted executions. File status: ${previousStatus.getStatus}`));
     }
   }
 }

@@ -117,7 +117,6 @@ export default abstract class BatchStep {
     const stepCurrentState: StepExecutionResult = this.getCurrentStepStatus();
     this.resetAggregator();
     try {
-
       if (stepCurrentState.getAccPayload.length > 0
         && stepCurrentState.getDependentRecords.length > 0) {
         // Lets try to execute the step.
@@ -136,18 +135,17 @@ export default abstract class BatchStep {
         await stepCurrentState.updateAddingStepExecResult();
         debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE', stepCurrentState.getNiceObjectToLogStepResult());
         return stepCurrentState;
-      } else {
-        //
-        if (this.successor != null
-          && this.successor !== undefined) {
-          return await this.successor.executeClientStep(resumeFlagCount -1);
-        }
-        // If this is last step in the chain, return success last one and log last step.
-        stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
-        await stepCurrentState.updateAddingStepExecResult();
-        debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE', stepCurrentState.getNiceObjectToLogStepResult());
-        return stepCurrentState;
       }
+      //
+      if (this.successor != null
+        && this.successor !== undefined) {
+        return await this.successor.executeClientStep(resumeFlagCount - 1);
+      }
+      // If this is last step in the chain, return success last one and log last step.
+      stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
+      await stepCurrentState.updateAddingStepExecResult();
+      debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE', stepCurrentState.getNiceObjectToLogStepResult());
+      return stepCurrentState;
     } catch (error) {
       // If there was an error, return failed an log.
       stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.FAILED;
@@ -157,7 +155,6 @@ export default abstract class BatchStep {
       return stepCurrentState;
     }
   }
-
 
 
   /**

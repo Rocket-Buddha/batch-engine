@@ -1,5 +1,3 @@
-import PersistanceContext from '../persistence/PersistanceContext';
-
 /** ********************************************************************* */
 /*  StepExecutionResult.ts                                                */
 /** ********************************************************************* */
@@ -28,6 +26,7 @@ import PersistanceContext from '../persistence/PersistanceContext';
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /** ********************************************************************* */
 
+import PersistanceContext from '../persistence/PersistanceContext';
 // Lib to get an UUID (https://en.wikipedia.org/wiki/Universally_unique_identifier).
 const uuidv1 = require('uuid/v1');
 
@@ -198,13 +197,17 @@ export class StepExecutionResult {
 
       if (this.getStepResultStatus !== STEP_RESULT_STATUS.SUCCESSFUL) {
         const obj = JSON.stringify(this.getNiceObjectToLogRecord());
+        // eslint-disable-next-line no-await-in-loop
         await this.persistanceContext.putRecordStatusSync(recordId, obj);
       } else {
+        // eslint-disable-next-line no-await-in-loop
         await this.persistanceContext.delRecordStatus(recordId.valueOf());
       }
       if (lastStepExecResStr !== null) {
         const lastStepExecResObj = JSON.parse(lastStepExecResStr);
-        await this.persistanceContext.delStepResultKey(lastStepExecResObj.step, lastStepExecResObj.id);
+        // eslint-disable-next-line no-await-in-loop
+        await this.persistanceContext.delStepResultKey(lastStepExecResObj.step,
+          lastStepExecResObj.id);
       }
     }
   }
@@ -214,7 +217,7 @@ export class StepExecutionResult {
       step: this.getStepNumber,
       id: this.getId,
       status: this.getStepResultStatus,
-    }
+    };
   }
 
   public getNiceObjectToLogStepResult(): Object {
@@ -226,7 +229,7 @@ export class StepExecutionResult {
       dependentRecords: this.dependentRecords,
       accPayload: this.accPayload,
       outPutPayload: this.outputPayload,
-      error: this.error
-    }
+      error: this.error,
+    };
   }
 }

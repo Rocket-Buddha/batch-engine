@@ -7,3 +7,5 @@ Batch Engine contributors  and roles list.
     Andres Lusi (@Rocket-Buddha).
 
 ## Contributors
+
+    Eduardo David Angeleri (@ChauchaMonte).

@@ -27,19 +27,14 @@
 /** ********************************************************************* */
 
 import PersistanceContext from '../persistence/PersistanceContext';
-
-// Batch status status enum.
-export enum BATCH_STATUS {
-  NOT_STARTED = 'NOT_STARTED',
-  PROCESSING = 'PROCESSING',
-  FINISHED_WITH_ERRORS = 'FINISHED_WITH_ERRORS',
-  FINISHED_SUCCESSFULLY = 'FINISHED_SUCCESSFULLY'
-}
+// eslint-disable-next-line import/no-cycle
+import MiscellaneousUtils from '../utils/Miscellaneous';
+import { BATCH_STATUS } from './BATCH_STATUS';
 
 /**
  * The Class that define all batch execution status.
  */
-export class BatchStatus {
+export default class BatchStatus {
   private persistanceContext: PersistanceContext;
 
   private batchName!: String;
@@ -75,7 +70,9 @@ export class BatchStatus {
   }
 
   public async startBatchExecution(execType: String, stepsCount: number) {
-    await this.persistanceContext.createExecutionPersistanceContext(this.batchName, execType, stepsCount);
+    await this.persistanceContext.createExecutionPersistanceContext(this.batchName,
+      execType,
+      stepsCount);
     await this.setBatchName(this.batchName);
     await this.setExecType(execType);
     await this.setStatus(BATCH_STATUS.PROCESSING);
@@ -95,9 +92,11 @@ export class BatchStatus {
     this.persistanceContext.closeAllDBs();
   }
 
-  public async addOneToLoadedRecords(){
+  public async addOneToLoadedRecords() {
     try {
-      await this.persistanceContext.putBatchStatusSync('loadedRecords', (this.loadedRecords + 1).toString());
+      await this.persistanceContext.putBatchStatusSync('loadedRecords',
+        (this.loadedRecords + 1)
+          .toString());
       this.loadedRecords += 1;
     } catch (err) {
       this.handleError(err);
@@ -106,8 +105,8 @@ export class BatchStatus {
 
   public async addOneFailedRecords(failedRecords: number) {
     try {
-      await this.persistanceContext.putBatchStatusSync('failedRecords', (this.failedRecords + 1).toString());
-      this.failedRecords += 1;
+      await this.persistanceContext.putBatchStatusSync('failedRecords', (this.failedRecords + failedRecords).toString());
+      this.failedRecords += failedRecords;
     } catch (err) {
       this.handleError(err);
     }
@@ -206,5 +205,73 @@ export class BatchStatus {
 
   public set setErrorHandler(handle: Function) {
     this.handleError = handle;
+  }
+
+  public async load(execName: String) {
+    await this.persistanceContext.recoverExecutionPersistanceContext(execName);
+    const batchName = await this.persistanceContext.getBatchStatus('batchName');
+    const loadedRecords = await this.persistanceContext.getBatchStatus('loadedRecords');
+    const lastLoadedRecordId = await this.persistanceContext.getBatchStatus('lastLoadedRecordId ');
+    const execType = await this.persistanceContext.getBatchStatus('execType');
+    const status = await this.persistanceContext.getBatchStatus('status');
+    const startDate = await this.persistanceContext.getBatchStatus('startDate');
+    const startDateISO = await this.persistanceContext.getBatchStatus('startDateISO');
+    const endDate = await this.persistanceContext.getBatchStatus('endDate');
+    const endDateISO = await this.persistanceContext.getBatchStatus('endDateISO');
+    const duration = await this.persistanceContext.getBatchStatus('duration');
+    const failedRecords = await this.persistanceContext.getBatchStatus('failedRecords');
+
+    if (batchName !== null
+      && batchName !== undefined) {
+      this.batchName = batchName;
+    }
+    if (loadedRecords !== null
+      && loadedRecords !== undefined) {
+      this.loadedRecords = parseInt(loadedRecords.valueOf(), 10);
+    }
+    if (lastLoadedRecordId !== null
+      && lastLoadedRecordId !== undefined) {
+      this.lastLoadedRecordId = lastLoadedRecordId;
+    }
+    if (execType !== null
+      && execType !== undefined) {
+      this.execType = execType;
+    }
+    if (status !== null
+      && status !== undefined) {
+      this.status = MiscellaneousUtils.getBatchStatusFromString(status);
+    }
+    if (startDate !== null
+      && startDate !== undefined) {
+      this.startDate = parseInt(startDate.valueOf(), 10);
+    }
+    if (startDateISO !== null
+      && startDateISO !== undefined) {
+      this.startDateISO = startDateISO;
+    }
+    if (endDate !== null
+      && endDate !== undefined) {
+      this.endDate = parseInt(endDate.valueOf(), 10);
+    }
+    if (endDateISO !== null
+      && endDateISO !== undefined) {
+      this.endDateISO = endDateISO;
+    }
+    if (duration !== null
+      && duration !== undefined) {
+      this.duration = parseInt(duration.valueOf(), 10);
+    }
+    if (failedRecords !== null
+      && failedRecords !== undefined) {
+      this.failedRecords = parseInt(failedRecords.valueOf(), 10);
+    }
+  }
+
+  public get getLoadedRecords() {
+    return this.loadedRecords;
+  }
+
+  public get getStatus() {
+    return this.status;
   }
 }
