@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "postinstall": "./node_modules/eslint/bin/eslint.js ./ --ext .ts",
+    "lint": "./node_modules/eslint/bin/eslint.js ./ --ext .ts",
     "build": "./node_modules/typescript/bin/tsc",
     "test": "./node_modules/mocha/bin/mocha ./test/unit/ --recursive"
   },
