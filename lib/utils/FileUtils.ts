@@ -29,30 +29,41 @@ import * as fs from 'fs';
 // Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:UTILS]');
 
+/**
+ * Files utils class with static methods.
+ */
 export default class FileUtils {
-  public static async getFoldersCount(folderPath: String): Promise<number> {
+  /**
+   * Method used to get the quantity of folders in a folder path.
+   * @param folderPath
+   */
+  public static async getFoldersCount(folderPath: String): Promise<number|any> {
     return new Promise((resolve, reject) => {
       fs.readdir(folderPath.valueOf(), (err, filenames) => {
         if (err) {
-          debuglog('ERROR-GETTING-FOLDER-COUNT: ', err);
+          debuglog('ERROR-GETTING-FOLDER-COUNT:\n', err);
           reject(err);
         }
-        debuglog('FILENAMES-GOT: ', filenames);
+        debuglog('FILENAMES-GOT:\n', filenames);
         resolve(filenames.length);
       });
     });
   }
 
+  /**
+   * Method used to create a folder in a folder path.
+   * @param folderPath
+   */
   public static async createFolder(folderPath: String) {
     return new Promise((resolve, reject) => {
       fs.exists(folderPath.valueOf(), (exists) => {
         if (!exists) {
           fs.mkdir(folderPath.valueOf(), { recursive: true }, (err) => {
             if (err) {
-              debuglog('ERROR-CREATING-FOLDER: ', err);
+              debuglog('ERROR-CREATING-FOLDER:\n', err);
               reject(err);
             }
-            debuglog('FOLDER-CREATED: ', folderPath);
+            debuglog('FOLDER-CREATED:\n', folderPath);
             resolve();
           });
         }

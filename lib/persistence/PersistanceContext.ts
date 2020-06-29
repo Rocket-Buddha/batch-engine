@@ -33,7 +33,7 @@ const level = require('level');
 // Debug log, used to debug features using env var NODE_DEBUG.
 // const debuglog = require('util').debuglog('[BATCH-ENGINE:PERSISTANCE]');
 
-export default class PersistanceContext {
+class PersistanceContext {
   private statusDB!: any;
 
   private recordsDB!: any;
@@ -96,7 +96,7 @@ export default class PersistanceContext {
 
   public async putBatchStatusSync(key: String, value: String) {
     return new Promise((resolve, reject) => {
-      this.statusDB.put(key.valueOf(), value.valueOf(), (err: any) => {
+      this.statusDB.put(key.valueOf(), value.valueOf(), { sync: true }, (err: any) => {
         if (err) {
           reject(err);
         }
@@ -107,7 +107,7 @@ export default class PersistanceContext {
 
   public async putRecordStatusSync(key: String, value: String) {
     return new Promise((resolve, reject) => {
-      this.recordsDB.put(key.valueOf(), value.valueOf(), (err: any) => {
+      this.recordsDB.put(key.valueOf(), value.valueOf(), { sync: true }, (err: any) => {
         if (err) {
           reject(err);
         }
@@ -118,21 +118,22 @@ export default class PersistanceContext {
 
   public async putStepResultSync(stepNumber: number, key: String, value: String) {
     return new Promise((resolve, reject) => {
-      this.stepsResultsDBs[stepNumber].put(key.valueOf(), value.valueOf(), (err: any) => {
-        if (err) {
-          reject(err);
-        }
-        resolve();
-      });
+      this.stepsResultsDBs[stepNumber].put(key.valueOf(), value.valueOf(),
+        { sync: true }, (err: any) => {
+          if (err) {
+            reject(err);
+          }
+          resolve();
+        });
     });
   }
 
-  public async getBatchStatus(key: String): Promise<String | null> {
+  public async getBatchStatus(key: String): Promise<String | null | any> {
     return new Promise((resolve, reject) => {
       this.statusDB.get(key, (err: any, value: any) => {
         if (err) {
           if (err.name === 'NotFoundError') {
-            resolve(null);
+            resolve(undefined);
           }
           reject(err);
         }
@@ -141,12 +142,12 @@ export default class PersistanceContext {
     });
   }
 
-  public async getRecordStatus(key: String): Promise<String | null> {
+  public async getRecordStatus(key: String): Promise<String | null | any> {
     return new Promise((resolve, reject) => {
       this.recordsDB.get(key, (err: any, value: any) => {
         if (err) {
           if (err.name === 'NotFoundError') {
-            resolve(null);
+            resolve(undefined);
           }
           reject(err);
         }
@@ -155,7 +156,7 @@ export default class PersistanceContext {
     });
   }
 
-  public async getStepResultKey(stepNumber: number, key: String): Promise<String | null> {
+  public async getStepResultKey(stepNumber: number, key: String): Promise<String | null |any> {
     return new Promise((resolve, reject) => {
       this.stepsResultsDBs[stepNumber].get(key, (err: any, value: any) => {
         if (err) {
@@ -166,7 +167,7 @@ export default class PersistanceContext {
     });
   }
 
-  public async delRecordStatus(key: String): Promise<String> {
+  public async delRecordStatus(key: String): Promise<String | any> {
     return new Promise((resolve, reject) => {
       this.recordsDB.del(key, (err: any, value: any) => {
         if (err) {
@@ -177,9 +178,9 @@ export default class PersistanceContext {
     });
   }
 
-  public async delStepResultKey(stepNumber: number, key: String): Promise<String> {
+  public async delStepResultKey(stepNumber: number, key: String): Promise<String | any> {
     return new Promise((resolve, reject) => {
-      this.stepsResultsDBs[stepNumber].del(key, (err: any, value: any) => {
+      this.stepsResultsDBs[stepNumber].del(key, (err: any, value: String) => {
         if (err) {
           reject(err);
         }
@@ -188,3 +189,7 @@ export default class PersistanceContext {
     });
   }
 }
+
+// Singleton persistence context.
+const persistanceContextSingleton = new PersistanceContext();
+export default persistanceContextSingleton;

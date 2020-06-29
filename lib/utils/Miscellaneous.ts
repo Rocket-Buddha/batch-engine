@@ -28,8 +28,11 @@
 
 import { BATCH_STATUS } from '../core/BATCH_STATUS';
 
-// const debuglog = require('util').debuglog('[BATCH-ENGINE:UTILS]');
+const debuglog = require('util').debuglog('[BATCH-ENGINE:UTILS]');
 
+/**
+ * Miscellaneous class with static functions.
+ */
 export default class MiscellaneousUtils {
   static getBatchStatusFromString(str: String): BATCH_STATUS {
     switch (str) {
@@ -42,7 +45,8 @@ export default class MiscellaneousUtils {
       case BATCH_STATUS.PROCESSING:
         return BATCH_STATUS.PROCESSING;
       default:
-        throw new Error('');
+        debuglog('REQUESTED-BATCH-STATUS-NOT-FOUNDED:\n', str);
+        throw (new Error(`There is no requested batch execution status state: ${str}`));
     }
   }
 }

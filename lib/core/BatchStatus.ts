@@ -26,7 +26,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /** ********************************************************************* */
 
-import PersistanceContext from '../persistence/PersistanceContext';
+import persistanceContext from '../persistence/PersistanceContext';
 // eslint-disable-next-line import/no-cycle
 import MiscellaneousUtils from '../utils/Miscellaneous';
 import { BATCH_STATUS } from './BATCH_STATUS';
@@ -35,8 +35,6 @@ import { BATCH_STATUS } from './BATCH_STATUS';
  * The Class that define all batch execution status.
  */
 export default class BatchStatus {
-  private persistanceContext: PersistanceContext;
-
   private batchName!: String;
 
   private loadedRecords: number = 0;
@@ -59,18 +57,12 @@ export default class BatchStatus {
 
   private failedRecords: number = 0;
 
-  private handleError!: Function;
-
-  public constructor(batchName: String,
-    persistanceContext: PersistanceContext,
-    errorHandler: Function) {
+  public constructor(batchName: String) {
     this.batchName = batchName;
-    this.persistanceContext = persistanceContext;
-    this.handleError = errorHandler;
   }
 
   public async startBatchExecution(execType: String, stepsCount: number) {
-    await this.persistanceContext.createExecutionPersistanceContext(this.batchName,
+    await persistanceContext.createExecutionPersistanceContext(this.batchName,
       execType,
       stepsCount);
     await this.setBatchName(this.batchName);
@@ -89,137 +81,85 @@ export default class BatchStatus {
     await this.setEndDate(Date.now());
     await this.setEndDateISO((new Date()).toISOString());
     await this.calculateDuration();
-    this.persistanceContext.closeAllDBs();
+    persistanceContext.closeAllDBs();
   }
 
   public async addOneToLoadedRecords() {
-    try {
-      await this.persistanceContext.putBatchStatusSync('loadedRecords',
-        (this.loadedRecords + 1)
-          .toString());
-      this.loadedRecords += 1;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('loadedRecords',
+      (this.loadedRecords + 1)
+        .toString());
+    this.loadedRecords += 1;
   }
 
   public async addOneFailedRecords(failedRecords: number) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('failedRecords', (this.failedRecords + failedRecords).toString());
-      this.failedRecords += failedRecords;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('failedRecords', (this.failedRecords + failedRecords).toString());
+    this.failedRecords += failedRecords;
   }
 
   public async calculateDuration() {
-    try {
-      const duration: number = Date.now() - this.startDate;
-      await this.persistanceContext.putBatchStatusSync('duration', duration.toString());
-      this.duration = duration;
-    } catch (err) {
-      this.handleError(err);
-    }
+    const duration: number = Date.now() - this.startDate;
+    await persistanceContext.putBatchStatusSync('duration', duration.toString());
+    this.duration = duration;
   }
 
   public async setLastLoadedRecordId(lastLoadedRecordId: string) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('lastLoadedRecordID', lastLoadedRecordId);
-      this.lastLoadedRecordId = lastLoadedRecordId;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('lastLoadedRecordID', lastLoadedRecordId);
+    this.lastLoadedRecordId = lastLoadedRecordId;
   }
 
   public async setBatchName(batchName: String) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('batchName', batchName);
-      this.batchName = batchName;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('batchName', batchName);
+    this.batchName = batchName;
   }
 
   public async setExecType(execType: String) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('execType', execType);
-      this.execType = execType;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('execType', execType);
+    this.execType = execType;
   }
 
   public async setStatus(status: BATCH_STATUS) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('status', status.toString());
-      this.status = status;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('status', status.toString());
+    this.status = status;
   }
 
   public async setStartDate(startDate: number) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('startDate', startDate.toString());
-      this.startDate = startDate;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('startDate', startDate.toString());
+    this.startDate = startDate;
   }
 
   public async setStartDateISO(startDateISO: String) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('startDateISO', startDateISO.valueOf());
-      this.startDateISO = startDateISO;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('startDateISO', startDateISO.valueOf());
+    this.startDateISO = startDateISO;
   }
 
   public async setEndDate(endDate: number) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('endDate', endDate.toString());
-      this.startDate = endDate;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('endDate', endDate.toString());
+    this.startDate = endDate;
   }
 
   public async setEndDateISO(endDateISO: String) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('endDateISO', endDateISO.valueOf());
-      this.startDateISO = endDateISO;
-    } catch (err) {
-      this.handleError(err);
-    }
+    await persistanceContext.putBatchStatusSync('endDateISO', endDateISO.valueOf());
+    this.startDateISO = endDateISO;
   }
 
   public async setDuration(duration: number) {
-    try {
-      await this.persistanceContext.putBatchStatusSync('duration', duration.toString());
-      this.duration = duration;
-    } catch (err) {
-      this.handleError(err);
-    }
-  }
-
-  public set setErrorHandler(handle: Function) {
-    this.handleError = handle;
+    await persistanceContext.putBatchStatusSync('duration', duration.toString());
+    this.duration = duration;
   }
 
   public async load(execName: String) {
-    await this.persistanceContext.recoverExecutionPersistanceContext(execName);
-    const batchName = await this.persistanceContext.getBatchStatus('batchName');
-    const loadedRecords = await this.persistanceContext.getBatchStatus('loadedRecords');
-    const lastLoadedRecordId = await this.persistanceContext.getBatchStatus('lastLoadedRecordId ');
-    const execType = await this.persistanceContext.getBatchStatus('execType');
-    const status = await this.persistanceContext.getBatchStatus('status');
-    const startDate = await this.persistanceContext.getBatchStatus('startDate');
-    const startDateISO = await this.persistanceContext.getBatchStatus('startDateISO');
-    const endDate = await this.persistanceContext.getBatchStatus('endDate');
-    const endDateISO = await this.persistanceContext.getBatchStatus('endDateISO');
-    const duration = await this.persistanceContext.getBatchStatus('duration');
-    const failedRecords = await this.persistanceContext.getBatchStatus('failedRecords');
+    await persistanceContext.recoverExecutionPersistanceContext(execName);
+    const batchName = await persistanceContext.getBatchStatus('batchName');
+    const loadedRecords = await persistanceContext.getBatchStatus('loadedRecords');
+    const lastLoadedRecordId = await persistanceContext.getBatchStatus('lastLoadedRecordId ');
+    const execType = await persistanceContext.getBatchStatus('execType');
+    const status = await persistanceContext.getBatchStatus('status');
+    const startDate = await persistanceContext.getBatchStatus('startDate');
+    const startDateISO = await persistanceContext.getBatchStatus('startDateISO');
+    const endDate = await persistanceContext.getBatchStatus('endDate');
+    const endDateISO = await persistanceContext.getBatchStatus('endDateISO');
+    const duration = await persistanceContext.getBatchStatus('duration');
+    const failedRecords = await persistanceContext.getBatchStatus('failedRecords');
 
     if (batchName !== null
       && batchName !== undefined) {

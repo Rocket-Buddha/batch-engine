@@ -26,13 +26,12 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /** ********************************************************************* */
 
-import PersistanceContext from '../persistence/PersistanceContext';
+import persistanceContext from '../persistence/PersistanceContext';
 // Lib to get an UUID (https://en.wikipedia.org/wiki/Universally_unique_identifier).
 const uuidv1 = require('uuid/v1');
 
 // Step status enum.
 export enum STEP_RESULT_STATUS {
-  BAD_INPUT = 'BAD_INPUT',
   FAILED = 'FAILED',
   ACCUMULATING = 'ACCUMULATING',
   PROCESSING = 'PROCESSING',
@@ -69,8 +68,6 @@ export class StepExecutionResult {
   // If there was an error, It will be here.
   private error!: Error;
 
-  private persistanceContext: PersistanceContext;
-
   /**
    * Constructor of step execution result.
    * @param stepName The step name.
@@ -85,15 +82,13 @@ export class StepExecutionResult {
     stepState: STEP_RESULT_STATUS | null,
     dependentRecords: Array<String>,
     previousStepPayloadAcc: Array<Object>,
-    outputPayload: Object | null,
-    persistanceContext: PersistanceContext) {
+    outputPayload: Object | null) {
     this.stepName = stepName;
     this.stepNumber = stepNumber;
     this.stepResultStatus = stepState;
     this.dependentRecords = dependentRecords;
     this.accPayload = previousStepPayloadAcc;
     this.outputPayload = outputPayload;
-    this.persistanceContext = persistanceContext;
   }
 
   /**
@@ -138,7 +133,7 @@ export class StepExecutionResult {
   /**
    * Set the output payload.
    */
-  public set setOutputPayload(resultState: Object | null) {
+  public set setOutputPayload(resultState: Object) {
     this.outputPayload = resultState;
   }
 
@@ -179,7 +174,7 @@ export class StepExecutionResult {
     // We don't want to save SUCCESSFUL LAST ONES steps executions.
     // We only want to track unfinished executions in the file.
     if (this.stepResultStatus !== STEP_RESULT_STATUS.SUCCESSFUL) {
-      await this.persistanceContext.putStepResultSync(this.getStepNumber,
+      await persistanceContext.putStepResultSync(this.getStepNumber,
         this.getId,
         JSON.stringify(this.getNiceObjectToLogStepResult()));
     }
@@ -192,26 +187,29 @@ export class StepExecutionResult {
     for (let i = 0; i < this.getDependentRecords.length; i += 1) {
       const recordId = this.getDependentRecords[i];
       // eslint-disable-next-line no-await-in-loop
-      const lastStepExecResStr: any | null = await this.persistanceContext
+      const lastStepExecResStr: any | null = await persistanceContext
         .getRecordStatus(recordId.valueOf());
 
       if (this.getStepResultStatus !== STEP_RESULT_STATUS.SUCCESSFUL) {
         const obj = JSON.stringify(this.getNiceObjectToLogRecord());
         // eslint-disable-next-line no-await-in-loop
-        await this.persistanceContext.putRecordStatusSync(recordId, obj);
+        await persistanceContext.putRecordStatusSync(recordId, obj);
       } else {
         // eslint-disable-next-line no-await-in-loop
-        await this.persistanceContext.delRecordStatus(recordId.valueOf());
+        await persistanceContext.delRecordStatus(recordId.valueOf());
       }
-      if (lastStepExecResStr !== null) {
+      if (lastStepExecResStr !== undefined) {
         const lastStepExecResObj = JSON.parse(lastStepExecResStr);
         // eslint-disable-next-line no-await-in-loop
-        await this.persistanceContext.delStepResultKey(lastStepExecResObj.step,
+        await persistanceContext.delStepResultKey(lastStepExecResObj.step,
           lastStepExecResObj.id);
       }
     }
   }
 
+  /**
+   * Return a nice object to be used in debug.
+   */
   public getNiceObjectToLogRecord(): Object {
     return {
       step: this.getStepNumber,
@@ -220,7 +218,39 @@ export class StepExecutionResult {
     };
   }
 
+  /**
+   * Return a nice object to be used in debug.
+   */
   public getNiceObjectToLogStepResult(): Object {
+    return {
+      id: this.id,
+      stepName: this.stepName,
+      stepNumber: this.stepNumber,
+      status: this.stepResultStatus,
+      dependentRecords: this.dependentRecords,
+      accPayload: this.accPayload,
+    };
+  }
+
+  /**
+   * Return a nice object to be used in debug.
+   */
+  public getNiceObjectToLogSuccessfulStepResult(): Object {
+    return {
+      id: this.id,
+      stepName: this.stepName,
+      stepNumber: this.stepNumber,
+      status: this.stepResultStatus,
+      dependentRecords: this.dependentRecords,
+      accPayload: this.accPayload,
+      outPutPayload: this.outputPayload,
+    };
+  }
+
+  /**
+   * Return a nice object to be used in debug.
+   */
+  public getNiceObjectToLogFailedStepResult(): Object {
     return {
       id: this.id,
       stepName: this.stepName,

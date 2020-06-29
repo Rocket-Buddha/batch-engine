@@ -26,7 +26,6 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /** ********************************************************************* */
 import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
-import PersistanceContext from '../persistence/PersistanceContext';
 
 
 // Debug log, used to debug features using env var NODE_DEBUG.
@@ -59,9 +58,6 @@ export default abstract class BatchStep {
   private aggregationQuantity: number = 1;
 
 
-  private persistanceContext: PersistanceContext = new PersistanceContext();
-
-
   /**
    * Constructor method.
    * @param stepName A descriptive name for the step.
@@ -79,32 +75,21 @@ export default abstract class BatchStep {
    */
   public async execute(previousStepResult: StepExecutionResult,
     resumeFlagCount: number = 0): Promise<StepExecutionResult> {
-    // Check is the previous step result is valid.
-    if (BatchStep.isPreviousStepResultValid(previousStepResult)) {
-      // Add the previous dependent records to this dependant records.
-      this.addPreviousDependentRecordsToAcc(previousStepResult.getDependentRecords);
-      // Accumulate the payload.
-      this.addPreviousStepPayloadAcc(previousStepResult.getOutputPayload);
-      // Check how many records have we to aggregate here.
-      // If we have enoughs we have to execute the step.
-      if (this.previousStepPayloadAcc.length >= this.aggregationQuantity
-        || resumeFlagCount > 0) {
-        return this.executeClientStep(resumeFlagCount - 1);
-      }
-      // Else, returns that we are accumulating.
-      const stepCurrentState: StepExecutionResult = this.getCurrentStepStatus(null,
-        STEP_RESULT_STATUS.ACCUMULATING);
-      await stepCurrentState.updateAddingStepExecResult();
-      debuglog('STEP-EXEC-ACCUMULATING', stepCurrentState.getNiceObjectToLogStepResult());
-      return stepCurrentState;
+    // Add the previous dependent records to this dependant records.
+    this.addPreviousDependentRecordsToAcc(previousStepResult.getDependentRecords);
+    // Accumulate the payload.
+    this.addPreviousStepPayloadAcc(previousStepResult.getOutputPayload);
+    // Check how many records have we to aggregate here.
+    // If we have enoughs we have to execute the step.
+    if (this.previousStepPayloadAcc.length >= this.aggregationQuantity
+      || resumeFlagCount > 0) {
+      return this.executeClientStep(resumeFlagCount - 1);
     }
-    // If it failed it returns bad input.
+    // Else, returns that we are accumulating.
     const stepCurrentState: StepExecutionResult = this.getCurrentStepStatus(null,
-      STEP_RESULT_STATUS.BAD_INPUT);
-    // @todo Implement common exceptions for the framework.
-    stepCurrentState.setError = new Error('Bad step input.');
+      STEP_RESULT_STATUS.ACCUMULATING);
     await stepCurrentState.updateAddingStepExecResult();
-    debuglog('STEP-EXEC-BAD-INPUT', stepCurrentState.getNiceObjectToLogStepResult());
+    debuglog('STEP-EXEC-ACCUMULATING\n', stepCurrentState.getNiceObjectToLogStepResult());
     return stepCurrentState;
   }
 
@@ -122,18 +107,19 @@ export default abstract class BatchStep {
         // Lets try to execute the step.
         stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.PROCESSING;
         await stepCurrentState.updateAddingStepExecResult();
-        debuglog('STEP-EXEC-PROCESSING', stepCurrentState.getNiceObjectToLogStepResult());
+        debuglog('STEP-EXEC-PROCESSING\n', stepCurrentState.getNiceObjectToLogStepResult());
         const payload = await this.step(stepCurrentState.getAccPayload);
         stepCurrentState.setOutputPayload = payload;
         //
         if (this.successor != null
           && this.successor !== undefined) {
+          stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
           return await this.successor.execute(stepCurrentState, resumeFlagCount);
         }
         // If this is last step in the chain, return success last one and log last step.
         stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
         await stepCurrentState.updateAddingStepExecResult();
-        debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE', stepCurrentState.getNiceObjectToLogStepResult());
+        debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE\n', stepCurrentState.getNiceObjectToLogSuccessfulStepResult());
         return stepCurrentState;
       }
       //
@@ -144,30 +130,16 @@ export default abstract class BatchStep {
       // If this is last step in the chain, return success last one and log last step.
       stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
       await stepCurrentState.updateAddingStepExecResult();
-      debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE', stepCurrentState.getNiceObjectToLogStepResult());
+      debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE\n', stepCurrentState.getNiceObjectToLogSuccessfulStepResult());
       return stepCurrentState;
     } catch (error) {
       // If there was an error, return failed an log.
       stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.FAILED;
       stepCurrentState.setError = error;
       await stepCurrentState.updateAddingStepExecResult();
-      debuglog('STEP-EXEC-FAILED', stepCurrentState.getNiceObjectToLogStepResult());
+      debuglog('STEP-EXEC-FAILED\n', stepCurrentState.getNiceObjectToLogFailedStepResult());
       return stepCurrentState;
     }
-  }
-
-
-  /**
-   * Check is the previous step result is valid.
-   * @param prevStepResult The previous step result.
-   */
-  private static isPreviousStepResultValid(prevStepResult: StepExecutionResult): Boolean {
-    return prevStepResult.getOutputPayload !== null
-      && prevStepResult.getOutputPayload !== undefined
-      && prevStepResult.getDependentRecords !== null
-      && prevStepResult.getDependentRecords !== undefined
-      && prevStepResult.getDependentRecords.length > 0
-      && prevStepResult.getStepResultStatus === STEP_RESULT_STATUS.SUCCESSFUL;
   }
 
   /**
@@ -209,8 +181,14 @@ export default abstract class BatchStep {
    * @param successor The successor step.
    */
   public addSuccessor(successor: BatchStep): BatchStep {
-    this.successor = successor;
-    return successor;
+    if (this.successor === undefined) {
+      this.successor = successor;
+      return successor;
+    } if (this.successor === successor) {
+      throw (new Error(`You are trying to add the same instance of an step 2 times. Step instance: ${successor}`));
+    } else {
+      return this.successor.addSuccessor(successor);
+    }
   }
 
   /**
@@ -227,8 +205,7 @@ export default abstract class BatchStep {
       status,
       [...this.dependentRecordsAcc],
       [...this.previousStepPayloadAcc],
-      JSON.parse(JSON.stringify(outputPayload)),
-      this.persistanceContext);
+      JSON.parse(JSON.stringify(outputPayload)));
   }
 
   /**
@@ -250,9 +227,5 @@ export default abstract class BatchStep {
       return 1;
     }
     return 1 + this.successor.getStepsCount();
-  }
-
-  public set setPersistanceContext(persistanceContext: PersistanceContext) {
-    this.persistanceContext = persistanceContext;
   }
 }

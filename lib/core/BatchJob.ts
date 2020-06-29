@@ -35,11 +35,9 @@ import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
 import BatchStep from './BatchStep';
 import BatchRecord from './BatchRecord';
 import BatchStatus from './BatchStatus';
-import PersistanceContext from '../persistence/PersistanceContext';
 import { BATCH_STATUS } from './BATCH_STATUS';
 // Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
-
 
 /**
  *  Batch Engine main class. This class controls all the execution logic.
@@ -57,8 +55,6 @@ export default abstract class BatchJob {
   private stepsChain!: BatchStep;
 
   private batchStatus!: BatchStatus;
-
-  private persistanceContext: PersistanceContext = new PersistanceContext();
 
 
   /**
@@ -84,9 +80,7 @@ export default abstract class BatchJob {
      * @param batchName The batch name.
      */
     public name(batchName: String) {
-      this.batchJob.batchStatus = new BatchStatus(batchName,
-        this.batchJob.persistanceContext,
-        this.batchJob.handleError);
+      this.batchJob.batchStatus = new BatchStatus(batchName);
       return this;
     }
 
@@ -107,8 +101,6 @@ export default abstract class BatchJob {
       if (this.batchJob.stepsChain === undefined) {
         // eslint-disable-next-line no-param-reassign
         step.setNumber = 1;
-        // eslint-disable-next-line no-param-reassign
-        step.setPersistanceContext = this.batchJob.persistanceContext;
         this.batchJob.stepsChain = step;
       } else {
         // eslint-disable-next-line no-param-reassign
@@ -167,7 +159,7 @@ export default abstract class BatchJob {
         && batchRecord != null) {
         // Do pre and post step common tasks and execute the step chain.
         await this.doPreCommonRecordTasks(batchRecord);
-        debuglog(`EXECUTING-NEW-RECORD (CONCURRENCY: ${this.currentConcurrency}): `, batchRecord);
+        debuglog(`EXECUTING-NEW-RECORD (CONCURRENCY: ${this.currentConcurrency}): \n`, batchRecord);
         await this.executeRecordSteps(batchRecord);
         await this.doPostCommonRecordTasks();
         // If we don't have more records to process and the concurrency is 0,
@@ -219,14 +211,11 @@ export default abstract class BatchJob {
       STEP_RESULT_STATUS.SUCCESSFUL,
       [batchRecord.getId],
       [],
-      batchRecord.getObject,
-      this.persistanceContext);
+      batchRecord.getObject);
 
     const returnedResult: StepExecutionResult = await this.stepsChain.execute(bootStrapStepResult);
-    if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED
-      || returnedResult.getStepResultStatus === STEP_RESULT_STATUS.BAD_INPUT) {
+    if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED) {
       await this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
-      await this.handleError(returnedResult.getError);
     }
   }
 
@@ -250,14 +239,8 @@ export default abstract class BatchJob {
   private async doPostCommonBatchTasks() {
     // Update batch exec status and debug log.
     await this.batchStatus.endBatchExecution();
-    debuglog('BATCH-EXEC-FINISHED', this);
+    debuglog('BATCH-EXEC-FINISHED:\n', this.batchStatus);
   }
-
-  /**
-   * To be implemented for clients to handle errors during step execution.
-   * @param error The error.
-   */
-  protected abstract handleError(error: Error): void;
 
   /**
    * Method to be implemented by client to move the cursor until some record number.
@@ -265,15 +248,17 @@ export default abstract class BatchJob {
    */
   protected abstract async moveToRecord(recordNumber: number): Promise<void>;
 
+  /**
+   * This method is used to finish the execution.
+   * At the end maybe some aggregators does not have enough
+   * quantity of accumulated payloads to execute, so, resume will force the execution.
+   */
   private async resume() {
     const returnedResult: StepExecutionResult = await this.stepsChain
       .executeClientStep(this.stepsChain
         .getStepsCount() - 1);
-
-    if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED
-      || returnedResult.getStepResultStatus === STEP_RESULT_STATUS.BAD_INPUT) {
+    if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED) {
       await this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
-      await this.handleError(returnedResult.getError);
     }
   }
 
@@ -283,7 +268,7 @@ export default abstract class BatchJob {
    */
   public async recover(statusPath: String) {
     // Load the status with previous batch status state.
-    const previousStatus: BatchStatus = new BatchStatus('', new PersistanceContext(), this.handleError);
+    const previousStatus: BatchStatus = new BatchStatus('');
     await previousStatus.load(statusPath);
     // We have to check that we are talking about interrupted execution.
     if (previousStatus.getStatus === BATCH_STATUS.PROCESSING) {
