@@ -135,7 +135,7 @@ export default abstract class BatchStep {
     } catch (error) {
       // If there was an error, return failed an log.
       stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.FAILED;
-      stepCurrentState.setError = error;
+      stepCurrentState.setError = error.message;
       stepCurrentState.updateAddingStepExecResult();
       debuglog('STEP-EXEC-FAILED\n', stepCurrentState.getNiceObjectToLogStepResult());
       return stepCurrentState;

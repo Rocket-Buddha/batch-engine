@@ -58,7 +58,6 @@ export default class BatchStatus {
 
   public constructor(batchName: String) {
     this.batchName = batchName;
-    this.save();
   }
 
   public startBatchExecution(execType: String) {
