@@ -15,6 +15,7 @@ $ npm i batch-engine
 ```
 
 ## API
+ Check this [minimum batch-engine example project](https://github.com/Rocket-Buddha/minimum-batch-engine-example).
 
 ```js
 const { BatchStep } = require("batch-engine");
