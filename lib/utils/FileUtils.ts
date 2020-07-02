@@ -37,6 +37,24 @@ export default class FileUtils {
    * Method used to get the quantity of folders in a folder path.
    * @param folderPath
    */
+  public static getFoldersCountSync(folderPath: String): number {
+    return fs.readdirSync(folderPath.valueOf()).length;
+  }
+
+  /**
+   * Method used to create a folder in a folder path.
+   * @param folderPath
+   */
+  public static createFolderSync(folderPath: String):void {
+    if (!fs.existsSync(folderPath.valueOf())) {
+      fs.mkdirSync(folderPath.valueOf(), { recursive: true });
+    }
+  }
+
+  /**
+   * Method used to get the quantity of folders in a folder path.
+   * @param folderPath
+   */
   public static async getFoldersCount(folderPath: String): Promise<number|any> {
     return new Promise((resolve, reject) => {
       fs.readdir(folderPath.valueOf(), (err, filenames) => {
@@ -49,6 +67,7 @@ export default class FileUtils {
       });
     });
   }
+
 
   /**
    * Method used to create a folder in a folder path.

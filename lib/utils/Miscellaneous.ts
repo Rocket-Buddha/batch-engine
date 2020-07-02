@@ -42,8 +42,10 @@ export default class MiscellaneousUtils {
         return BATCH_STATUS.FINISHED_WITH_ERRORS;
       case BATCH_STATUS.NOT_STARTED:
         return BATCH_STATUS.NOT_STARTED;
-      case BATCH_STATUS.PROCESSING:
-        return BATCH_STATUS.PROCESSING;
+      case BATCH_STATUS.PROCESSING_INJECTING:
+        return BATCH_STATUS.PROCESSING_INJECTING;
+      case BATCH_STATUS.PROCESSING_WAITING:
+        return BATCH_STATUS.PROCESSING_WAITING;
       default:
         debuglog('REQUESTED-BATCH-STATUS-NOT-FOUNDED:\n', str);
         throw (new Error(`There is no requested batch execution status state: ${str}`));

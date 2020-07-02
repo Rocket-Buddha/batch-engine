@@ -20,130 +20,156 @@ $ npm i batch-engine
 const { BatchStep } = require("batch-engine");
 const { BatchJob } = require("batch-engine");
 const { BatchRecord } = require("batch-engine");
-const LineByLine = require("n-readlines");
+var fs = require('fs');
+
+const randomTime = 0;
 
 class MyBatchJob extends BatchJob {
 
-    doPreBatchTasks() {
-        this.myLineByLine
-            = new LineByLine('/file/path/to/your/file.csv');
+  constructor() {
+    super();
+    this.count = 0;
+  }
+
+  doPreBatchTasks() {
+    
+  }
+
+  async getNext() {
+    this.count++;
+    if (this.count <= 300) {
+      return new BatchRecord(this.count, String(this.count));
+    }
+    return null;
+  }
+
+
+  async moveToRecord(recordNumber) {
+
+    for (let i = 0; i < recordNumber; i++) {
+      this.getNext();
     }
 
-    async getNext() {
-        const next = this.myLineByLine.next();
-        if (next) {
+  }
 
-            const data = next.toString().replace(/["']/g, "")
-                .replace('\r', '')
-                .split(',');
+  doPostBatchTasks() {
+   
+  }
 
-            const nextPerson = new Person(data[0],
-                data[1],
-                data[2],
-                data[3],
-                parseInt(data[4]),
-                data[5],
-                data[6],
-                data[7],
-                data[8],
-                parseInt(data[9]),
-                parseFloat(data[10]),
-                data[11],
-                parseInt(data[12]));
-
-            return new BatchRecord(nextPerson.id, nextPerson);
-        }
-        return null;
-    }
-
-    async moveToRecord(recordNumber) {
-
-        for (let i = 0; i < recordNumber; i++) {
-            this.getNext();
-        }
-
-    }
-
-    doPostBatchTasks() {
-        //this.myLineByLine.close();
-    }
-
-    handleError(error) {
-        //console.log(error);
-    }
 
 }
 
-class MyBatchStep extends BatchStep {
-
-    async step(previousStepPayloadAcc) {
-
-        return new Promise((resolve, reject) => {
-            setTimeout(() => {
-                if (Math.random() < 0.05) {
-                    reject({
-                        code: 1002,
-                        des: "Bla bla refused",
-                    });
-                } else {
-                    resolve({
-                        outputPayload: "bla bla output payload"
-                    });
-                }
-            }, Math.random() * 7000);
-        });
-    }
+class MyBatchStep1 extends BatchStep {
+  async step(previousStepPayloadAcc) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        let acc =  "";
+        for(let i = 0; i < previousStepPayloadAcc.length; i++){
+          if(i !== 0){
+            acc = acc + "-" + previousStepPayloadAcc[i];
+          }
+          else {
+            acc = previousStepPayloadAcc[i];
+          }
+        }       
+        resolve(acc);
+      }, Math.random() * randomTime);
+    });
+  }
 }
 
-class Person {
-    constructor(id
-        , firstName,
-        lastName,
-        gender,
-        age,
-        email,
-        phone,
-        education,
-        occupation,
-        experience,
-        salary,
-        maritalStatus,
-        numberOfChildren) {
+class MyBatchStep2 extends BatchStep {
+  async step(previousStepPayloadAcc) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        let acc =  "";
+        for(let i = 0; i < previousStepPayloadAcc.length; i++){
+          if(i !== 0){
+            acc = acc + "**" + previousStepPayloadAcc[i];
+          }
+          else {
+            acc = previousStepPayloadAcc[i];
+          }
+        }  
+        resolve(acc);
+      }, Math.random() * randomTime);
+    });
+  }
+}
 
-        this.id = id;
-        this.firstName = firstName;
-        this.lastName = lastName;
-        this.gender = gender;
-        this.age = age;
-        this.email = email;
-        this.phone = phone;
-        this.education = education;
-        this.occupation = occupation;
-        this.experience = experience;
-        this.salary = salary;
-        this.maritalStatus = maritalStatus;
-        this.numberOfChildren = numberOfChildren;
-    }
+class MyBatchStep3 extends BatchStep {
+  async step(previousStepPayloadAcc) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (Math.random() <= 0.05){
+          reject("LALALALA");
+        } else {
+          let acc =  "";
+        for(let i = 0; i < previousStepPayloadAcc.length; i++){
+          if(i !== 0){
+            acc = acc + "|||" + previousStepPayloadAcc[i];
+          }
+          else {
+            acc = previousStepPayloadAcc[i];
+          }
+        }    
+        resolve(acc);
+        }
+      }, Math.random() * randomTime);
+    });
+  }
+}
+
+class MyBatchStep4 extends BatchStep {
+  async step(previousStepPayloadAcc) {
+    return new Promise((resolve, reject) => {
+      fs.appendFile('/home/andres/Desktop/out.log', String(previousStepPayloadAcc[0]) + "\n", function (err) {
+        if (err) { 
+          console.log("Error");
+          reject(err);
+        } else {
+          resolve();
+        }
+     });
+    });
+  }
 }
 
 // Run 
 (new MyBatchJob.Builder(MyBatchJob))
-    .concurrency(5)
-    .name('people-loader')
-    .addStep(new MyBatchStep("el timeout", 1))
-    .build()
-    .run();
-
-// Recover interrupted execution
-(new MyBatchJob.Builder(MyBatchJob))
-    .concurrency(50)
-    .name('people-loader')
-    .addStep(new MyBatchStep("el timeout", 1))
-    .build()
-    .recover('people-loader-[RUN]-2020-01-19T15:38:16.458Z');
+  .concurrencyMultiplier(8)
+  .name('test-batch')
+  .addStep(new MyBatchStep1("Unir 3 numeros usando -", 3))
+  .addStep(new MyBatchStep2("Unir 2 entradas usando **", 2))
+  .addStep(new MyBatchStep3("Unir 4 entradas usando |||", 4))
+  .addStep(new MyBatchStep4("Put the the entry in a output file", 1))
+  .build()
+  .run();
 ```
 ## Debug
-TODO.
+Debug for visual code.
+```js
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "batch-engine-example",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "env": {
+        "NODE_DEBUG" : "[BATCH-ENGINE:CORE]"
+      },
+      "program": "${workspaceFolder}/example/example-batch-engine.js"
+    }
+  ]
+}
+```
 
 ## License
 

@@ -27,6 +27,8 @@
 /** ********************************************************************* */
 
 import FileUtils from '../utils/FileUtils';
+// eslint-disable-next-line import/no-cycle
+import BatchStatus from '../core/BatchStatus';
 
 const level = require('level');
 
@@ -38,23 +40,20 @@ class PersistanceContext {
 
   private recordsDB!: any;
 
-  private stepsResultsDBs: { [stepNumber: number]: any; } = {};
+  private stepsResultsDB: any;
 
   private currentFilePath!: String;
 
+
   public async createExecutionPersistanceContext(batchName: String,
-    execType: String,
-    stepsQuantity: number) {
+    execType: String) {
     this.currentFilePath = `${process.cwd()}/${batchName}-[${execType}]-${(new Date()).toISOString()}`;
 
-    await FileUtils.createFolder(this.currentFilePath);
+    FileUtils.createFolderSync(this.currentFilePath);
 
     this.statusDB = level(`${this.currentFilePath}/batch-status`);
     this.recordsDB = level(`${this.currentFilePath}/records`);
-
-    for (let i = 1; i <= stepsQuantity; i += 1) {
-      this.stepsResultsDBs[i] = level(`${this.currentFilePath}/step-${i}`);
-    }
+    this.stepsResultsDB = level(`${this.currentFilePath}/steps-results`);
     this.openAllDBs();
   }
 
@@ -64,10 +63,10 @@ class PersistanceContext {
     this.statusDB = level(`${this.currentFilePath}/batch-status`);
     this.recordsDB = level(`${this.currentFilePath}/records`);
 
-    const stepsQuantity = await FileUtils.getFoldersCount(this.currentFilePath) - 2;
+    const stepsQuantity = FileUtils.getFoldersCountSync(this.currentFilePath) - 2;
 
     for (let i = 1; i <= stepsQuantity; i += 1) {
-      this.stepsResultsDBs[i] = level(`${this.currentFilePath}/step-${i}`);
+      this.stepsResultsDB = level(`${this.currentFilePath}/steps-results`);
     }
     this.openAllDBs();
   }
@@ -75,28 +74,18 @@ class PersistanceContext {
   private openAllDBs(): void {
     this.recordsDB.open();
     this.recordsDB.open();
-    // eslint-disable-next-line no-restricted-syntax
-    for (const key in this.stepsResultsDBs) {
-      if (Object.prototype.hasOwnProperty.call(this.stepsResultsDBs, key)) {
-        this.stepsResultsDBs[key].open();
-      }
-    }
+    this.stepsResultsDB.open();
   }
 
-  public closeAllDBs(): void {
+  public closeAllDBs() {
     this.statusDB.close();
     this.recordsDB.close();
-    // eslint-disable-next-line no-restricted-syntax
-    for (const key in this.stepsResultsDBs) {
-      if (Object.prototype.hasOwnProperty.call(this.stepsResultsDBs, key)) {
-        this.stepsResultsDBs[key].close();
-      }
-    }
+    this.stepsResultsDB.close();
   }
 
-  public async putBatchStatusSync(key: String, value: String) {
+  public async putBatchStatus(key: String, value: String) {
     return new Promise((resolve, reject) => {
-      this.statusDB.put(key.valueOf(), value.valueOf(), { sync: true }, (err: any) => {
+      this.statusDB.put(key.valueOf(), value.valueOf(), { sync: false }, (err: any) => {
         if (err) {
           reject(err);
         }
@@ -105,9 +94,9 @@ class PersistanceContext {
     });
   }
 
-  public async putRecordStatusSync(key: String, value: String) {
+  public async putRecordStatus(key: String, value: String) {
     return new Promise((resolve, reject) => {
-      this.recordsDB.put(key.valueOf(), value.valueOf(), { sync: true }, (err: any) => {
+      this.recordsDB.put(key.valueOf(), value.valueOf(), { sync: false }, (err: any) => {
         if (err) {
           reject(err);
         }
@@ -116,10 +105,10 @@ class PersistanceContext {
     });
   }
 
-  public async putStepResultSync(stepNumber: number, key: String, value: String) {
+  public async putStepResult(stepNumber: number, key: String, value: String) {
     return new Promise((resolve, reject) => {
-      this.stepsResultsDBs[stepNumber].put(key.valueOf(), value.valueOf(),
-        { sync: true }, (err: any) => {
+      this.stepsResultsDB.put(key.valueOf(), value.valueOf(),
+        { sync: false }, (err: any) => {
           if (err) {
             reject(err);
           }
@@ -156,9 +145,9 @@ class PersistanceContext {
     });
   }
 
-  public async getStepResultKey(stepNumber: number, key: String): Promise<String | null |any> {
+  public async getStepResultKey(key: String): Promise<String | null | any> {
     return new Promise((resolve, reject) => {
-      this.stepsResultsDBs[stepNumber].get(key, (err: any, value: any) => {
+      this.stepsResultsDB.get(key, (err: any, value: any) => {
         if (err) {
           reject(err);
         }
@@ -169,7 +158,7 @@ class PersistanceContext {
 
   public async delRecordStatus(key: String): Promise<String | any> {
     return new Promise((resolve, reject) => {
-      this.recordsDB.del(key, (err: any, value: any) => {
+      this.recordsDB.del(key, { sync: false }, (err: any, value: any) => {
         if (err) {
           reject(err);
         }
@@ -180,7 +169,7 @@ class PersistanceContext {
 
   public async delStepResultKey(stepNumber: number, key: String): Promise<String | any> {
     return new Promise((resolve, reject) => {
-      this.stepsResultsDBs[stepNumber].del(key, (err: any, value: String) => {
+      this.stepsResultsDB.del(key, { sync: false }, (err: any, value: String) => {
         if (err) {
           reject(err);
         }
@@ -188,6 +177,45 @@ class PersistanceContext {
       });
     });
   }
+
+  public async saveAllRecord(status: BatchStatus): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.statusDB.batch()
+        .put('batchName', status.batchName)
+        .put('execType', status.execType)
+        .put('status', status.status)
+        .put('lastLoadedRecordId', status.lastLoadedRecordId)
+        .put('loadedRecords', status.loadedRecords)
+        .put('failedRecords', status.failedRecords)
+        .put('startDate', status.startDate)
+        .put('startDateISO', status.startDateISO)
+        .put('endDate', status.endDate)
+        .put('endDateISO', status.endDateISO)
+        .put('duration', status.duration)
+        .write((err: any) => {
+          if (err) {
+            reject(err);
+          }
+          resolve();
+        });
+    });
+  }
+
+  /** public showStatus() {
+    this.statusDB.createReadStream()
+      .on('data', (data:any) => {
+        console.log(data.key, '=', data.value);
+      })
+      .on('error', (err:any) => {
+        console.log('Oh my!', err);
+      })
+      .on('close', () => {
+        console.log('Stream closed');
+      })
+      .on('end', () => {
+        console.log('Stream ended');
+      });
+  }* */
 }
 
 // Singleton persistence context.

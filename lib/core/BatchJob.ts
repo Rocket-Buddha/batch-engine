@@ -30,12 +30,12 @@
 /* eslint max-classes-per-file: ["error", 2] */
 
 // OS module to get cpu quantity.
-import * as OS from 'os';
 import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
 import BatchStep from './BatchStep';
 import BatchRecord from './BatchRecord';
 import BatchStatus from './BatchStatus';
 import { BATCH_STATUS } from './BATCH_STATUS';
+// import MiscellaneousUtils from '../utils/Miscellaneous';
 // Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
 
@@ -43,9 +43,9 @@ const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
  *  Batch Engine main class. This class controls all the execution logic.
  */
 export default abstract class BatchJob {
-  // Attribute used to set max available concurrency.
-  // It will be set up as the number of CPU * 2 by default.
-  private maxConcurrency: number = OS.cpus().length * 2;
+  private concurrencyMultiplier: number = 0;
+
+  private maxConcurrentRecords: number = 0;
 
   // Attribute used to store the number o records that are being processed at execution time.
   private currentConcurrency: number = 0;
@@ -88,8 +88,8 @@ export default abstract class BatchJob {
      * Set max concurrency in BatchJob.
      * @param concurrency Max concurrency.
      */
-    public concurrency(concurrency: number): Builder<T> {
-      this.batchJob.maxConcurrency = concurrency;
+    public concurrencyMultiplier(concurrencyMultiplier: number): Builder<T> {
+      this.batchJob.concurrencyMultiplier = concurrencyMultiplier;
       return this;
     }
 
@@ -114,19 +114,28 @@ export default abstract class BatchJob {
      * Build the BatchJob after set up all the attributes.
      */
     public build(): T {
+      this.batchJob.maxConcurrentRecords = this.batchJob.getTotalStepsNeeded()
+        * this.batchJob.concurrencyMultiplier;
       return this.batchJob;
     }
   };
 
+  constructor() {
+    process.on('exit', async () => {
+      BatchStatus.exit();
+      debuglog('BATCH-EXEC-FINISHED:\n', this.batchStatus);
+    });
+  }
+
   /**
    *  Method used to start batch execution.
    */
-  public async run() {
+  public run() {
     // Do common and client defined pre all exec tasks.
-    await this.doPreBatchCommonTasks('RUN');
-    await this.doPreBatchTasks();
+    this.doPreBatchCommonTasks('RUN');
+    this.doPreBatchTasks();
     // Start async all the workers until max concurrency.
-    for (let i = 0; i < this.maxConcurrency; i += 1) {
+    for (let i = 0; i < this.maxConcurrentRecords; i += 1) {
       this.doNextObj();
     }
   }
@@ -134,8 +143,8 @@ export default abstract class BatchJob {
   /**
    *  Execute common pre batch tasks.
    */
-  private async doPreBatchCommonTasks(execType: String) {
-    await this.batchStatus.startBatchExecution(execType, this.stepsChain.getStepsCount());
+  private doPreBatchCommonTasks(execType: String) {
+    this.batchStatus.startBatchExecution(execType);
   }
 
   /*
@@ -151,28 +160,24 @@ export default abstract class BatchJob {
   public async doNextObj(): Promise<any> {
     // Check (https://eslint.org/docs/rules/no-async-promise-executor).
     // eslint-disable-next-line no-async-promise-executor
-    return new Promise(async () => {
+    if (this.batchStatus.status === BATCH_STATUS.PROCESSING_INJECTING) {
       // Get new record.
       const batchRecord: BatchRecord | null = await this.getNext();
       // Check available currency and batch record.
-      if (this.isConcurrencyAvailable()
-        && batchRecord != null) {
+      if (batchRecord != null) {
         // Do pre and post step common tasks and execute the step chain.
-        await this.doPreCommonRecordTasks(batchRecord);
+        this.doPreCommonRecordTasks(batchRecord);
         debuglog(`EXECUTING-NEW-RECORD (CONCURRENCY: ${this.currentConcurrency}): \n`, batchRecord);
-        await this.executeRecordSteps(batchRecord);
-        await this.doPostCommonRecordTasks();
-        // If we don't have more records to process and the concurrency is 0,
+        const successfulDependentRecords = await this.executeRecordSteps(batchRecord);
+        this.doPostCommonRecordTasks(successfulDependentRecords);
+        // If we don't have more records to process and the current concurrency is 0,
         // the batch process has finished.
-      } else if (this.currentConcurrency <= 0
-        && batchRecord === null) {
-        // We have to resume accumulated records in aggregators and update exec status,
-        // using record exec result.
-        await this.resume();
-        await this.doPostCommonBatchTasks();
-        await this.doPostBatchTasks();
+      } else if (batchRecord === null
+        && this.batchStatus.status === BATCH_STATUS.PROCESSING_INJECTING) {
+        //
+        this.batchStatus.status = BATCH_STATUS.PROCESSING_WAITING;
       }
-    });
+    }
   }
 
   /**
@@ -182,22 +187,17 @@ export default abstract class BatchJob {
    */
   protected abstract async getNext(): Promise<BatchRecord | null>;
 
-  /**
-   * Method to check if is there concurrency available to start a new record execution.
-   */
-  private isConcurrencyAvailable() {
-    return this.currentConcurrency < this.maxConcurrency;
-  }
 
   /**
    * Common pre record execution tasks.
    * @param batchRecord The bach record to be executed.
    */
-  private async doPreCommonRecordTasks(batchRecord: BatchRecord) {
+  private doPreCommonRecordTasks(batchRecord: BatchRecord) {
     // Increment concurrency and save the record id as the last record loaded in status.
     this.currentConcurrency += 1;
-    await this.batchStatus.addOneToLoadedRecords();
-    await this.batchStatus.setLastLoadedRecordId(batchRecord.getId.valueOf());
+    this.batchStatus.addOneToLoadedRecords();
+    this.batchStatus.lastLoadedRecordId = batchRecord.getId.valueOf();
+    this.batchStatus.save();
   }
 
   /**
@@ -211,21 +211,48 @@ export default abstract class BatchJob {
       STEP_RESULT_STATUS.SUCCESSFUL,
       [batchRecord.getId],
       [],
-      batchRecord.getObject);
+      batchRecord.getObject,
+      false);
 
     const returnedResult: StepExecutionResult = await this.stepsChain.execute(bootStrapStepResult);
     if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED) {
-      await this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+      this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+      return returnedResult.getDependentRecords.length;
+    } if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.SUCCESSFUL
+      && returnedResult.getStepNumber === this.stepsChain.getStepsCount()) {
+      // The quantity o dependent records is the finished.
+      return returnedResult.getDependentRecords.length;
     }
+    // Always returns 0, because it did not finish all the steps
+    // for any record (Processing and Accumulating).
+    return 0;
   }
 
   /**
    * Common post record execution tasks.
    */
-  private doPostCommonRecordTasks() {
-    // Decrement concurrency and load de next record.
-    this.currentConcurrency -= 1;
-    this.doNextObj();
+  private async doPostCommonRecordTasks(successfulDependentRecords: number) {
+    // Decrement concurrency.
+    this.currentConcurrency -= successfulDependentRecords;
+    if (this.batchStatus.status === BATCH_STATUS.PROCESSING_INJECTING) {
+      // Have to send to execute the number of returned successfully executed records.
+      for (let i = 0; i < successfulDependentRecords; i += 1) {
+        this.doNextObj();
+      }
+    } else if (this.batchStatus.status === BATCH_STATUS.PROCESSING_WAITING) {
+      // We have to see how many records are in the chain
+      // and compare it with the minimum quantity needed,
+      // to finish the complete job.
+      if (this.stepsChain.recordsInTheChain() < this.stepsChain.getTotalStepsNeeded()
+        && this.stepsChain.recordsInTheChain() === this.currentConcurrency) {
+        this.resume();
+      }
+      if (this.currentConcurrency <= 0
+        && this.stepsChain.recordsInTheChain() === 0) {
+        this.doPostCommonBatchTasks();
+        this.doPostBatchTasks();
+      }
+    }
   }
 
   /**
@@ -238,8 +265,7 @@ export default abstract class BatchJob {
    */
   private async doPostCommonBatchTasks() {
     // Update batch exec status and debug log.
-    await this.batchStatus.endBatchExecution();
-    debuglog('BATCH-EXEC-FINISHED:\n', this.batchStatus);
+    this.batchStatus.endBatchExecution();
   }
 
   /**
@@ -254,35 +280,25 @@ export default abstract class BatchJob {
    * quantity of accumulated payloads to execute, so, resume will force the execution.
    */
   private async resume() {
+    this.currentConcurrency += this.stepsChain.recordsInTheChain();
+
     const returnedResult: StepExecutionResult = await this.stepsChain
       .executeClientStep(this.stepsChain
         .getStepsCount() - 1);
     if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED) {
-      await this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+      this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
     }
+
+    this.currentConcurrency -= returnedResult.getDependentRecords.length;
+
+    this.doPostCommonRecordTasks(returnedResult.getDependentRecords.length);
   }
 
-  /**
-   * Method used to recover an interrupted execution.
-   * @param statusPath The execution batch status file path.
-   */
-  public async recover(statusPath: String) {
-    // Load the status with previous batch status state.
-    const previousStatus: BatchStatus = new BatchStatus('');
-    await previousStatus.load(statusPath);
-    // We have to check that we are talking about interrupted execution.
-    if (previousStatus.getStatus === BATCH_STATUS.PROCESSING) {
-      debuglog(`EXECUTING-BATCH-RECOVER (UP TO RECORD NUMBER: ${previousStatus.getLoadedRecords})`);
-      // Do common and client defined pre all exec tasks.
-      await this.doPreBatchCommonTasks(`RECOVER-${statusPath}-FROM-RECORD: ${previousStatus.getLoadedRecords}`);
-      await this.doPreBatchTasks();
-      await this.moveToRecord(previousStatus.getLoadedRecords);
-      // Start async all the workers until max concurrency.
-      for (let i = 0; i < this.maxConcurrency; i += 1) {
-        this.doNextObj();
-      }
-    } else {
-      throw (new Error(`Batch recover is only for interrupted executions. File status: ${previousStatus.getStatus}`));
-    }
+  public getTotalStepsNeeded(): number {
+    return this.stepsChain.getTotalStepsNeeded();
+  }
+
+  set setMaxConcurrentRecordsAtSameTime(value: number) {
+    this.maxConcurrentRecords = value;
   }
 }

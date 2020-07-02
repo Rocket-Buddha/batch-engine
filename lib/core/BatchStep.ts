@@ -88,7 +88,7 @@ export default abstract class BatchStep {
     // Else, returns that we are accumulating.
     const stepCurrentState: StepExecutionResult = this.getCurrentStepStatus(null,
       STEP_RESULT_STATUS.ACCUMULATING);
-    await stepCurrentState.updateAddingStepExecResult();
+    stepCurrentState.updateAddingStepExecResult();
     debuglog('STEP-EXEC-ACCUMULATING\n', stepCurrentState.getNiceObjectToLogStepResult());
     return stepCurrentState;
   }
@@ -106,7 +106,7 @@ export default abstract class BatchStep {
         && stepCurrentState.getDependentRecords.length > 0) {
         // Lets try to execute the step.
         stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.PROCESSING;
-        await stepCurrentState.updateAddingStepExecResult();
+        stepCurrentState.updateAddingStepExecResult();
         debuglog('STEP-EXEC-PROCESSING\n', stepCurrentState.getNiceObjectToLogStepResult());
         const payload = await this.step(stepCurrentState.getAccPayload);
         stepCurrentState.setOutputPayload = payload;
@@ -114,30 +114,30 @@ export default abstract class BatchStep {
         if (this.successor != null
           && this.successor !== undefined) {
           stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
-          return await this.successor.execute(stepCurrentState, resumeFlagCount);
+          return this.successor.execute(stepCurrentState, resumeFlagCount);
         }
         // If this is last step in the chain, return success last one and log last step.
         stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
-        await stepCurrentState.updateAddingStepExecResult();
-        debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE\n', stepCurrentState.getNiceObjectToLogSuccessfulStepResult());
+        stepCurrentState.updateAddingStepExecResult();
+        debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE\n', stepCurrentState.getNiceObjectToLogStepResult());
         return stepCurrentState;
       }
       //
       if (this.successor != null
         && this.successor !== undefined) {
-        return await this.successor.executeClientStep(resumeFlagCount - 1);
+        return this.successor.executeClientStep(resumeFlagCount - 1);
       }
       // If this is last step in the chain, return success last one and log last step.
       stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.SUCCESSFUL;
-      await stepCurrentState.updateAddingStepExecResult();
-      debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE\n', stepCurrentState.getNiceObjectToLogSuccessfulStepResult());
+      stepCurrentState.updateAddingStepExecResult();
+      debuglog('STEP-EXEC-SUCCESSFUL-LAST-ONE\n', stepCurrentState.getNiceObjectToLogStepResult());
       return stepCurrentState;
     } catch (error) {
       // If there was an error, return failed an log.
       stepCurrentState.setStepResultStatus = STEP_RESULT_STATUS.FAILED;
       stepCurrentState.setError = error;
-      await stepCurrentState.updateAddingStepExecResult();
-      debuglog('STEP-EXEC-FAILED\n', stepCurrentState.getNiceObjectToLogFailedStepResult());
+      stepCurrentState.updateAddingStepExecResult();
+      debuglog('STEP-EXEC-FAILED\n', stepCurrentState.getNiceObjectToLogStepResult());
       return stepCurrentState;
     }
   }
@@ -205,7 +205,8 @@ export default abstract class BatchStep {
       status,
       [...this.dependentRecordsAcc],
       [...this.previousStepPayloadAcc],
-      JSON.parse(JSON.stringify(outputPayload)));
+      JSON.parse(JSON.stringify(outputPayload)),
+      this.successor === undefined);
   }
 
   /**
@@ -227,5 +228,21 @@ export default abstract class BatchStep {
       return 1;
     }
     return 1 + this.successor.getStepsCount();
+  }
+
+  /**
+   *
+   */
+  public getTotalStepsNeeded() : number {
+    if (this.successor === undefined) return this.aggregationQuantity;
+    return this.aggregationQuantity * this.successor.getTotalStepsNeeded();
+  }
+
+  public recordsInTheChain() : number {
+    if (this.successor != null
+      && this.successor !== undefined) {
+      return this.dependentRecordsAcc.length + this.successor.recordsInTheChain();
+    }
+    return this.dependentRecordsAcc.length;
   }
 }
