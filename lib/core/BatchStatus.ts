@@ -81,6 +81,7 @@ export default class BatchStatus {
     this.endDateISO = new Date().toISOString();
     this.duration = (this.endDate - this.startDate) / 1000;
     this.save();
+    this.getExecutionResume();
   }
 
   public static exit() {
@@ -97,5 +98,18 @@ export default class BatchStatus {
 
   public async save() {
     persistanceContext.saveAllRecord(this);
+  }
+
+  public async getExecutionResume() {
+    const incompleteTasks: any = await persistanceContext.getAllIncompleteTasks();
+    const incompleteTasksDetails = await persistanceContext
+      .getAllIncompleteTasksDetails(incompleteTasks);
+
+    const output = {
+      batchStatus: this,
+      incompleteTasks,
+      incompleteTasksDetails,
+    };
+    persistanceContext.generateExecutionResume(output);
   }
 }

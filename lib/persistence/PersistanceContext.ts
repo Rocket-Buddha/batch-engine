@@ -201,21 +201,45 @@ class PersistanceContext {
     });
   }
 
-  /** public showStatus() {
-    this.statusDB.createReadStream()
-      .on('data', (data:any) => {
-        console.log(data.key, '=', data.value);
-      })
-      .on('error', (err:any) => {
-        console.log('Oh my!', err);
-      })
-      .on('close', () => {
-        console.log('Stream closed');
-      })
-      .on('end', () => {
-        console.log('Stream ended');
-      });
-  }* */
+  public async getAllIncompleteTasks() {
+    const tasks: Array<Object> = [];
+    return new Promise((resolve) => {
+      this.recordsDB.createReadStream()
+        .on('data', (data: any) => {
+          tasks.push(data);
+        })
+        .on('end', () => {
+          resolve(JSON.parse(JSON
+            .stringify(tasks)
+            .replace(/\\/g, '')
+            .replace(/"{/g, '{')
+            .replace(/}"/g, '}')));
+        });
+    });
+  }
+
+  public async getAllIncompleteTasksDetails(tasks: any) {
+    const detailedTasks: Array<any> = [];
+    const alreadyPut: Array<any> = [];
+
+    for (let i = 0; i < tasks.length; i += 1) {
+      if (!alreadyPut.includes(tasks[i].value.id)) {
+        // eslint-disable-next-line no-await-in-loop
+        detailedTasks.push(await this.getStepResultKey(tasks[i].value.id));
+        alreadyPut.push(tasks[i].value.id);
+      }
+    }
+
+    return JSON.parse(JSON
+      .stringify(detailedTasks)
+      .replace(/\\/g, '')
+      .replace(/"{/g, '{')
+      .replace(/}"/g, '}'));
+  }
+
+  public generateExecutionResume(output: Object) {
+    FileUtils.generateExecutionResume(`${this.currentFilePath.toString()}/execution-resume.json`, JSON.stringify(output, null, 1));
+  }
 }
 
 // Singleton persistence context.

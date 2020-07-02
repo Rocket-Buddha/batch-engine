@@ -89,4 +89,8 @@ export default class FileUtils {
       });
     });
   }
+
+  public static generateExecutionResume(filePath: string, output: Object) {
+    fs.writeFileSync(filePath, output);
+  }
 }
