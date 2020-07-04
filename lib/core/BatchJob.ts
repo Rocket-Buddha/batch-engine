@@ -35,6 +35,7 @@ import BatchStep from './BatchStep';
 import BatchRecord from './BatchRecord';
 import BatchStatus from './BatchStatus';
 import { BATCH_STATUS } from './BATCH_STATUS';
+import recoveredPersistanceContextSingleton from '../persistence/RecoveredPersistanceContext';
 // import MiscellaneousUtils from '../utils/Miscellaneous';
 // Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
@@ -80,7 +81,24 @@ export default abstract class BatchJob {
      * @param batchName The batch name.
      */
     public name(batchName: String) {
+      if (this.batchJob.batchStatus !== null
+        && this.batchJob.batchStatus !== undefined) {
+        this.batchJob.batchStatus.batchName = batchName;
+        return this;
+      }
       this.batchJob.batchStatus = new BatchStatus(batchName);
+      return this;
+    }
+
+
+    public executionResumeLimit(limit: number) {
+      if (this.batchJob.batchStatus !== null
+        && this.batchJob.batchStatus !== undefined) {
+        this.batchJob.batchStatus.failedRecordsResumeLimit = limit;
+        return this;
+      }
+      this.batchJob.batchStatus = new BatchStatus('my-batch-job');
+      this.batchJob.batchStatus.failedRecordsResumeLimit = limit;
       return this;
     }
 
@@ -176,6 +194,7 @@ export default abstract class BatchJob {
         && this.batchStatus.status === BATCH_STATUS.PROCESSING_INJECTING) {
         //
         this.batchStatus.status = BATCH_STATUS.PROCESSING_WAITING;
+        this.batchStatus.save();
       }
     }
   }
@@ -289,8 +308,6 @@ export default abstract class BatchJob {
       this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
     }
 
-    this.currentConcurrency -= returnedResult.getDependentRecords.length;
-
     this.doPostCommonRecordTasks(returnedResult.getDependentRecords.length);
   }
 
@@ -300,5 +317,50 @@ export default abstract class BatchJob {
 
   set setMaxConcurrentRecordsAtSameTime(value: number) {
     this.maxConcurrentRecords = value;
+  }
+
+
+  public retry(statusPath: String): void {
+    recoveredPersistanceContextSingleton.recoverExecutionPersistanceContext(statusPath);
+
+
+    // Do common and client defined pre all exec tasks.
+    this.doPreBatchCommonTasks('RETRY');
+
+    const alreadyReMake: string[] = [];
+
+    for (let i = 1; i <= this.stepsChain.getStepsCount(); i += 1) {
+      recoveredPersistanceContextSingleton.getIncompleteTasksStream()
+        .on('data', async (data: any) => {
+          const dataObj = JSON.parse(JSON
+            .stringify(data)
+            .replace(/\\/g, '')
+            .replace(/"{/g, '{')
+            .replace(/}"/g, '}'));
+
+          if (!alreadyReMake.includes(dataObj.value.id)
+            && dataObj.value.step === i) {
+            alreadyReMake.push(dataObj.value.id);
+            const stepResult = await recoveredPersistanceContextSingleton
+              .getStepResultKey(dataObj.value.id);
+            this.stepsChain.injectRecoveredState(stepResult, i);
+            this.batchStatus.addLoadedRecords(stepResult.dependentRecords.length);
+            this.resumeRecover();
+          }
+        });
+    }
+
+    this.doPostCommonBatchTasks();
+  }
+
+  private async resumeRecover() {
+    this.currentConcurrency += this.stepsChain.recordsInTheChain();
+    const returnedResult: StepExecutionResult = await this.stepsChain
+      .executeClientStep(this.stepsChain
+        .getStepsCount() - 1);
+    if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED) {
+      this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+    }
+    this.currentConcurrency -= returnedResult.getDependentRecords.length;
   }
 }

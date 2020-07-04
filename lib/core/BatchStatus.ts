@@ -56,6 +56,8 @@ export default class BatchStatus {
 
   public duration: number = 0;
 
+  public failedRecordsResumeLimit: number = 10000;
+
   public constructor(batchName: String) {
     this.batchName = batchName;
   }
@@ -80,7 +82,11 @@ export default class BatchStatus {
     this.endDateISO = new Date().toISOString();
     this.duration = (this.endDate - this.startDate) / 1000;
     this.save();
-    this.getExecutionResume();
+    if (this.failedRecords < this.failedRecordsResumeLimit) {
+      this.getCompleteExecutionResume();
+    } else {
+      this.getExecutionResume();
+    }
   }
 
   public static exit() {
@@ -91,6 +97,10 @@ export default class BatchStatus {
     this.loadedRecords += 1;
   }
 
+  public addLoadedRecords(recordsNumber: number) {
+    this.loadedRecords += recordsNumber;
+  }
+
   public addOneFailedRecords(failedRecords: number) {
     this.failedRecords += failedRecords;
   }
@@ -99,7 +109,7 @@ export default class BatchStatus {
     persistanceContext.saveAllRecord(this);
   }
 
-  public async getExecutionResume() {
+  public async getCompleteExecutionResume() {
     const incompleteTasks: any = await persistanceContext.getAllIncompleteTasks();
     const incompleteTasksDetails = await persistanceContext
       .getAllIncompleteTasksDetails(incompleteTasks);
@@ -108,6 +118,15 @@ export default class BatchStatus {
       batchStatus: this,
       incompleteTasks,
       incompleteTasksDetails,
+    };
+    persistanceContext.generateExecutionResume(output);
+  }
+
+  public async getExecutionResume() {
+    const output = {
+      batchStatus: this,
+      incompleteTasks: `More than ${this.failedRecordsResumeLimit} defined limit records to show. Check records db using a LevelDB client.`,
+      incompleteTasksDetails: `More than ${this.failedRecordsResumeLimit} defined limit records to show. Check steps db using a LevelDB client.`,
     };
     persistanceContext.generateExecutionResume(output);
   }

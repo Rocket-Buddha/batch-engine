@@ -233,16 +233,29 @@ export default abstract class BatchStep {
   /**
    *
    */
-  public getTotalStepsNeeded() : number {
+  public getTotalStepsNeeded(): number {
     if (this.successor === undefined) return this.aggregationQuantity;
     return this.aggregationQuantity * this.successor.getTotalStepsNeeded();
   }
 
-  public recordsInTheChain() : number {
+  public recordsInTheChain(): number {
     if (this.successor != null
       && this.successor !== undefined) {
       return this.dependentRecordsAcc.length + this.successor.recordsInTheChain();
     }
     return this.dependentRecordsAcc.length;
+  }
+
+  public injectRecoveredState(state: any, stepNumber: number) {
+    if (this.stepNumber === stepNumber) {
+      this.dependentRecordsAcc = state.dependentRecords;
+      this.previousStepPayloadAcc = state.accPayload;
+    } else if (stepNumber > this.stepNumber
+      && this.successor !== undefined
+      && this.successor !== null) {
+      this.successor.injectRecoveredState(state, stepNumber);
+    } else {
+      throw (new Error('You are trying to inject a state in an invalid step.'));
+    }
   }
 }
