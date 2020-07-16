@@ -26,6 +26,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /** ********************************************************************* */
 import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
+import PersistanceContext from '../persistence/PersistanceContext';
 
 
 // Debug log, used to debug features using env var NODE_DEBUG.
@@ -56,6 +57,9 @@ export default abstract class BatchStep {
   // Define how many payload will accumulate before execute the step.
   // By default all the steps are aggregators of 1.
   private aggregationQuantity: number = 1;
+
+  // Attribute to save the job persistance context.
+  private persistanceContext!: PersistanceContext;
 
 
   /**
@@ -206,7 +210,8 @@ export default abstract class BatchStep {
       [...this.dependentRecordsAcc],
       [...this.previousStepPayloadAcc],
       JSON.parse(JSON.stringify(outputPayload)),
-      this.successor === undefined);
+      this.successor === undefined,
+      this.persistanceContext);
   }
 
   /**
@@ -231,13 +236,16 @@ export default abstract class BatchStep {
   }
 
   /**
-   *
+   * Get the total steeps needed to run the chain 1 time efficiently.
    */
   public getTotalStepsNeeded(): number {
     if (this.successor === undefined) return this.aggregationQuantity;
     return this.aggregationQuantity * this.successor.getTotalStepsNeeded();
   }
 
+  /**
+   * Get the total number of records that were injected in the chain.
+   */
   public recordsInTheChain(): number {
     if (this.successor != null
       && this.successor !== undefined) {
@@ -246,6 +254,11 @@ export default abstract class BatchStep {
     return this.dependentRecordsAcc.length;
   }
 
+  /**
+   * Method to be used in the retry to inject previous steps states.
+   * @param state The previous status.
+   * @param stepNumber The step number in where you want to inject the state.
+   */
   public injectRecoveredState(state: any, stepNumber: number) {
     if (this.stepNumber === stepNumber) {
       this.dependentRecordsAcc = state.dependentRecords;
@@ -257,5 +270,13 @@ export default abstract class BatchStep {
     } else {
       throw (new Error('You are trying to inject a state in an invalid step.'));
     }
+  }
+
+  /**
+   * Set the persistance context.
+   * @param context Set the persistance context
+   */
+  public setPersistanceContext(context: PersistanceContext) {
+    this.persistanceContext = context;
   }
 }

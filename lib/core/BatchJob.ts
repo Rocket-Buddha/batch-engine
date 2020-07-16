@@ -28,15 +28,13 @@
 
 // Set max classes per file 2 to allow nested builder class.
 /* eslint max-classes-per-file: ["error", 2] */
-
-// OS module to get cpu quantity.
 import { StepExecutionResult, STEP_RESULT_STATUS } from './StepExecutionResult';
 import BatchStep from './BatchStep';
 import BatchRecord from './BatchRecord';
 import BatchStatus from './BatchStatus';
 import { BATCH_STATUS } from './BATCH_STATUS';
-import recoveredPersistanceContextSingleton from '../persistence/RecoveredPersistanceContext';
-// import MiscellaneousUtils from '../utils/Miscellaneous';
+import PersistanceContext from '../persistence/PersistanceContext';
+
 // Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
 
@@ -44,8 +42,13 @@ const debuglog = require('util').debuglog('[BATCH-ENGINE:CORE]');
  *  Batch Engine main class. This class controls all the execution logic.
  */
 export default abstract class BatchJob {
+  // Attribute used to store concurrency multiplier.
+  // This will be used to generate the maxConcurrentRecords:
+  // maxConcurrentRecords =
+  // concurrency multiplier  * minimum number of records that needs the chain to work efficiently.
   private concurrencyMultiplier: number = 0;
 
+  // The max numbers of records that will be processed "at the same time".
   private maxConcurrentRecords: number = 0;
 
   // Attribute used to store the number o records that are being processed at execution time.
@@ -55,8 +58,14 @@ export default abstract class BatchJob {
   // It uses a Chain of Responsibility pattern (https://en.wikipedia.org/wiki/Chain-of-responsibility_pattern).
   private stepsChain!: BatchStep;
 
+  // Attribute used to store all batch status.
   private batchStatus!: BatchStatus;
 
+  // Attribute to save the job persistance context.
+  private persistanceContext: PersistanceContext = new PersistanceContext();
+
+  // Attribute to save the job persistance context.
+  private recoveredPersistanceContext!: PersistanceContext;
 
   /**
    *  Class used by framework clients to build new BatchJobs easily.
@@ -90,7 +99,10 @@ export default abstract class BatchJob {
       return this;
     }
 
-
+    /**
+     * Method used to create an execution resume file.
+     * @param limit Max quantity of failed records that will show the execution resume.
+     */
     public executionResumeLimit(limit: number) {
       if (this.batchJob.batchStatus !== null
         && this.batchJob.batchStatus !== undefined) {
@@ -116,6 +128,7 @@ export default abstract class BatchJob {
      * @param step The step that you want to add.
      */
     public addStep(step: BatchStep) {
+      step.setPersistanceContext(this.batchJob.getPersistanceContext);
       if (this.batchJob.stepsChain === undefined) {
         // eslint-disable-next-line no-param-reassign
         step.setNumber = 1;
@@ -138,10 +151,14 @@ export default abstract class BatchJob {
     }
   };
 
+  /**
+   * Batch Job constructor.
+   */
   constructor() {
+    // We subscribe the job to the "exit" signal.
     process.on('exit', async () => {
-      BatchStatus.exit();
-      debuglog('BATCH-EXEC-FINISHED:\n', this.batchStatus);
+      this.batchStatus.exit();
+      debuglog('BATCH-EXEC-FINISHED:\n', this.batchStatus.getNiceObjectToLog());
     });
   }
 
@@ -162,6 +179,7 @@ export default abstract class BatchJob {
    *  Execute common pre batch tasks.
    */
   private doPreBatchCommonTasks(execType: String) {
+    this.batchStatus.setPersistanceContext(this.persistanceContext);
     this.batchStatus.startBatchExecution(execType);
   }
 
@@ -177,7 +195,6 @@ export default abstract class BatchJob {
    */
   public async doNextObj(): Promise<any> {
     // Check (https://eslint.org/docs/rules/no-async-promise-executor).
-    // eslint-disable-next-line no-async-promise-executor
     if (this.batchStatus.status === BATCH_STATUS.PROCESSING_INJECTING) {
       // Get new record.
       const batchRecord: BatchRecord | null = await this.getNext();
@@ -192,7 +209,8 @@ export default abstract class BatchJob {
         // the batch process has finished.
       } else if (batchRecord === null
         && this.batchStatus.status === BATCH_STATUS.PROCESSING_INJECTING) {
-        //
+        // Change the status. Now this will have to process pending records,
+        // and then finish the execution.
         this.batchStatus.status = BATCH_STATUS.PROCESSING_WAITING;
         this.batchStatus.save();
       }
@@ -231,12 +249,15 @@ export default abstract class BatchJob {
       [batchRecord.getId],
       [],
       batchRecord.getObject,
-      false);
-
+      false,
+      this.persistanceContext);
+    // Execute
     const returnedResult: StepExecutionResult = await this.stepsChain.execute(bootStrapStepResult);
+    // FAILED
     if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED) {
-      this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+      this.batchStatus.addFailedRecords(returnedResult.getDependentRecords.length);
       return returnedResult.getDependentRecords.length;
+    // SUCCESSFUL
     } if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.SUCCESSFUL
       && returnedResult.getStepNumber === this.stepsChain.getStepsCount()) {
       // The quantity o dependent records is the finished.
@@ -264,8 +285,9 @@ export default abstract class BatchJob {
       // to finish the complete job.
       if (this.stepsChain.recordsInTheChain() < this.stepsChain.getTotalStepsNeeded()
         && this.stepsChain.recordsInTheChain() === this.currentConcurrency) {
-        this.resume();
-      }
+        await this.resume();
+      } // If the currency is 0 and there is no more records in the chain...
+      // The Job is finished.
       if (this.currentConcurrency <= 0
         && this.stepsChain.recordsInTheChain() === 0) {
         this.doPostCommonBatchTasks();
@@ -299,68 +321,95 @@ export default abstract class BatchJob {
    * quantity of accumulated payloads to execute, so, resume will force the execution.
    */
   private async resume() {
-    this.currentConcurrency += this.stepsChain.recordsInTheChain();
-
     const returnedResult: StepExecutionResult = await this.stepsChain
       .executeClientStep(this.stepsChain
         .getStepsCount() - 1);
     if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED) {
-      this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+      this.batchStatus.addFailedRecords(returnedResult.getDependentRecords.length);
     }
-
-    this.doPostCommonRecordTasks(returnedResult.getDependentRecords.length);
+    // Decrement concurrency.
+    this.currentConcurrency -= returnedResult.getDependentRecords.length;
   }
 
+  /**
+   * Method used to get the minimum quantity of record that needs the step chain to work
+   * efficiently. For instance, if we have:
+   * [step1: aggregates:5] ---> [step2: aggregates:2] ---> [step3: aggregates:1]
+   * The minimum will be 5 * 2 * 1 = 10.
+   * It means that tou need inject 10 records to the chain to complete all 1 time.
+   */
   public getTotalStepsNeeded(): number {
     return this.stepsChain.getTotalStepsNeeded();
   }
 
+  /**
+   * Set the max quantity of records that can be processed at the same time.
+   */
   set setMaxConcurrentRecordsAtSameTime(value: number) {
     this.maxConcurrentRecords = value;
   }
 
-
-  public retry(statusPath: String): void {
-    recoveredPersistanceContextSingleton.recoverExecutionPersistanceContext(statusPath);
-
-
-    // Do common and client defined pre all exec tasks.
+  /**
+   * Method used to start a RETRY RUN.
+   * @param statusPath The status of the previous finalized with errors execution.
+   */
+  public async retry(statusPath: String) {
+    // Recover the execution context of the failed RUN.
+    this.setRecoveredPersistanceContext = new PersistanceContext();
+    await this.recoveredPersistanceContext.recoverExecutionPersistanceContext(statusPath);
+    // Prepare a new execution context for the RETRY.
     this.doPreBatchCommonTasks('RETRY');
-
+    // We have to be sure that we only re-execute a  failed step 1 time.
+    // A step execution probably has more that 1 dependent record.
     const alreadyReMake: string[] = [];
 
+    // We have to re-inject the failed steps in order to achieve a efficient execution.
     for (let i = 1; i <= this.stepsChain.getStepsCount(); i += 1) {
-      recoveredPersistanceContextSingleton.getIncompleteTasksStream()
+      this.recoveredPersistanceContext.getIncompleteRecordsStream()
         .on('data', async (data: any) => {
           const dataObj = JSON.parse(JSON
             .stringify(data)
             .replace(/\\/g, '')
             .replace(/"{/g, '{')
             .replace(/}"/g, '}'));
-
           if (!alreadyReMake.includes(dataObj.value.id)
             && dataObj.value.step === i) {
             alreadyReMake.push(dataObj.value.id);
-            const stepResult = await recoveredPersistanceContextSingleton
+            const stepResult = await this.recoveredPersistanceContext
               .getStepResultKey(dataObj.value.id);
             this.stepsChain.injectRecoveredState(stepResult, i);
             this.batchStatus.addLoadedRecords(stepResult.dependentRecords.length);
             this.resumeRecover();
           }
+        })
+        .on('end', () => {
+          this.doPostCommonBatchTasks();
         });
     }
-
-    this.doPostCommonBatchTasks();
   }
 
+  /**
+   * Method used to resume a failed execution whe we do a RETRY RUN.
+   */
   private async resumeRecover() {
     this.currentConcurrency += this.stepsChain.recordsInTheChain();
     const returnedResult: StepExecutionResult = await this.stepsChain
       .executeClientStep(this.stepsChain
         .getStepsCount() - 1);
     if (returnedResult.getStepResultStatus === STEP_RESULT_STATUS.FAILED) {
-      this.batchStatus.addOneFailedRecords(returnedResult.getDependentRecords.length);
+      this.batchStatus.addFailedRecords(returnedResult.getDependentRecords.length);
     }
     this.currentConcurrency -= returnedResult.getDependentRecords.length;
+  }
+
+  /**
+   * Get current persistance context.
+   */
+  get getPersistanceContext(): PersistanceContext {
+    return this.persistanceContext;
+  }
+
+  set setRecoveredPersistanceContext(recoveredPersistanceContext: PersistanceContext) {
+    this.recoveredPersistanceContext = recoveredPersistanceContext;
   }
 }

@@ -21,19 +21,19 @@ $ npm i batch-engine
 const { BatchStep } = require("batch-engine");
 const { BatchJob } = require("batch-engine");
 const { BatchRecord } = require("batch-engine");
-var fs = require('fs');
-
+const  fs = require('fs');
 const randomTime = 0;
 
 class MyBatchJob extends BatchJob {
 
   constructor() {
     super();
+    // Just for this example proposes.
     this.count = 0;
   }
 
   doPreBatchTasks() {
-    
+    // Maybe open a file.
   }
 
   async getNext() {
@@ -44,19 +44,9 @@ class MyBatchJob extends BatchJob {
     return null;
   }
 
-
-  async moveToRecord(recordNumber) {
-
-    for (let i = 0; i < recordNumber; i++) {
-      this.getNext();
-    }
-
-  }
-
   doPostBatchTasks() {
-   
+   // Maybe close a file.
   }
-
 
 }
 
@@ -103,7 +93,7 @@ class MyBatchStep3 extends BatchStep {
     return new Promise((resolve, reject) => {
       setTimeout(() => {
         if (Math.random() <= 0.05){
-          reject("LALALALA");
+          reject("Random error!");
         } else {
           let acc =  "";
         for(let i = 0; i < previousStepPayloadAcc.length; i++){
@@ -124,9 +114,8 @@ class MyBatchStep3 extends BatchStep {
 class MyBatchStep4 extends BatchStep {
   async step(previousStepPayloadAcc) {
     return new Promise((resolve, reject) => {
-      fs.appendFile('/home/andres/Desktop/out.log', String(previousStepPayloadAcc[0]) + "\n", function (err) {
+      fs.appendFile('/path/in/your/pc/out.log', String(previousStepPayloadAcc[0]) + "\n", function (err) {
         if (err) { 
-          console.log("Error");
           reject(err);
         } else {
           resolve();
@@ -140,20 +129,32 @@ class MyBatchStep4 extends BatchStep {
 (new MyBatchJob.Builder(MyBatchJob))
   .concurrencyMultiplier(8)
   .name('test-batch')
-  .addStep(new MyBatchStep1("Unir 3 numeros usando -", 3))
-  .addStep(new MyBatchStep2("Unir 2 entradas usando **", 2))
-  .addStep(new MyBatchStep3("Unir 4 entradas usando |||", 4))
-  .addStep(new MyBatchStep4("Put the the entry in a output file", 1))
+  .addStep(new MyBatchStep1("Join 3 records using -", 3))
+  .addStep(new MyBatchStep2("Join 2 payloads using **", 2))
+  .addStep(new MyBatchStep3("Join 4 payloads using |||", 4))
+  .addStep(new MyBatchStep4("Put the result in an output file", 1))
   .build()
   .run();
+
+// When some records failed, you can retry that ones.
+/* 
+(new MyBatchJob.Builder(MyBatchJob))
+  .concurrencyMultiplier(8)
+  .name('test-batch-retry')
+  .addStep(new MyBatchStep1("Join 3 records using -", 3))
+  .addStep(new MyBatchStep2("Join 2 payloads using **", 2))
+  .addStep(new MyBatchStep3("Join 4 payloads using |||", 4))
+  .addStep(new MyBatchStep4("Put the result in an output file", 1))
+  .build()
+  .retry(/path/to/execution/context);
+*/
 ```
+
 ## Debug
-Debug for visual code.
+Debug for visual code using NODE_DEBUG.
+
 ```js
 {
-  // Use IntelliSense to learn about possible attributes.
-  // Hover to view descriptions of existing attributes.
-  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
   "configurations": [
     {

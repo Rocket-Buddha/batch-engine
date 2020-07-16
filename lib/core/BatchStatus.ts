@@ -26,45 +26,72 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /** ********************************************************************* */
 
-// eslint-disable-next-line import/no-cycle
-import persistanceContext from '../persistence/PersistanceContext';
 import { BATCH_STATUS } from './BATCH_STATUS';
+import PersistanceContext from '../persistence/PersistanceContext';
 
 /**
  * The Class that define all batch execution status.
  */
 export default class BatchStatus {
+  // Attribute to set the batch job name to be printed in resume.
   public batchName!: String;
 
+  // Quantity of loaded records from the source.
   public loadedRecords: number = 0;
 
+  // The last loaded record id.
   public lastLoadedRecordId: String = '';
 
+  // The execution type, could be RUN, RETRY, etc...
   public execType: String = 'RUN';
 
+  // The current batch status.
   public status: BATCH_STATUS = BATCH_STATUS.NOT_STARTED;
 
+  // Batch execution start date in ms unix.
   public startDate: number = 0;
 
+  // Batch execution start date in ms ISO.
   public startDateISO: String = '';
 
+  // Batch execution end date in ms unix.
   public endDate: number = 0;
 
+  // Batch execution end date in ms ISO.
   public endDateISO: String = '';
 
+  // Quantity current failed records.
   public failedRecords: number = 0;
 
+  // Total duration of batch execution.
+  // Will be updated at the end.
   public duration: number = 0;
 
+  // Limit failed records to print in execution-resume.json file.
   public failedRecordsResumeLimit: number = 10000;
 
+  // Current persistance context.
+  private persistanceContext!: PersistanceContext;
+
+  /**
+   * Default constructor
+   * @param batchName The Job name.
+   */
   public constructor(batchName: String) {
     this.batchName = batchName;
   }
 
+  /**
+   * Method used to start execution.
+   * @param execType The execution type string.
+   */
   public startBatchExecution(execType: String) {
-    persistanceContext.createExecutionPersistanceContext(this.batchName,
-      execType);
+    if (this.persistanceContext !== undefined) {
+      this.persistanceContext.createExecutionPersistanceContext(this.batchName,
+        execType);
+    } else {
+      throw (new Error('No persistance context assigned to the BatchStatus'));
+    }
     this.execType = execType;
     this.status = BATCH_STATUS.PROCESSING_INJECTING;
     this.startDate = Date.now();
@@ -72,6 +99,9 @@ export default class BatchStatus {
     this.save();
   }
 
+  /**
+   * Method used to finish the batch execution.
+   */
   public endBatchExecution() {
     if (this.failedRecords > 0) {
       this.status = BATCH_STATUS.FINISHED_WITH_ERRORS;
@@ -89,45 +119,93 @@ export default class BatchStatus {
     }
   }
 
-  public static exit() {
-    persistanceContext.closeAllDBs();
+  /**
+   * Method used to exit the program.
+   */
+  public exit() {
+    this.persistanceContext.closeAllDBs();
   }
 
+  /**
+   * Method used to add a loaded record.
+   */
   public addOneToLoadedRecords() {
     this.loadedRecords += 1;
   }
 
+  /**
+   * Method used to add more than 1 loaded record.
+   * @param recordsNumber The number of records.
+   */
   public addLoadedRecords(recordsNumber: number) {
     this.loadedRecords += recordsNumber;
   }
 
-  public addOneFailedRecords(failedRecords: number) {
+  /**
+   * Method used to add failed records to the status.
+   * @param failedRecords
+   */
+  public addFailedRecords(failedRecords: number) {
     this.failedRecords += failedRecords;
   }
 
+  /**
+   * Method used to save in persistance context the status.
+   */
   public async save() {
-    persistanceContext.saveAllRecord(this);
+    this.persistanceContext.saveAllRecord(this);
   }
 
+  /**
+   * Method to generate the complete execution resume file.
+   */
   public async getCompleteExecutionResume() {
-    const incompleteTasks: any = await persistanceContext.getAllIncompleteTasks();
-    const incompleteTasksDetails = await persistanceContext
-      .getAllIncompleteTasksDetails(incompleteTasks);
+    const incompleteTasks: any = await this.persistanceContext.getAllIncompleteRecords();
+    const incompleteTasksDetails = await this.persistanceContext
+      .getAllIncompleteRecordsDetails(incompleteTasks);
 
     const output = {
-      batchStatus: this,
+      batchStatus: this.getNiceObjectToLog(),
       incompleteTasks,
       incompleteTasksDetails,
     };
-    persistanceContext.generateExecutionResume(output);
+    this.persistanceContext.generateExecutionResume(output);
   }
 
+  /**
+   * Get a bounded execution resume.
+   */
   public async getExecutionResume() {
     const output = {
-      batchStatus: this,
+      batchStatus: this.getNiceObjectToLog(),
       incompleteTasks: `More than ${this.failedRecordsResumeLimit} defined limit records to show. Check records db using a LevelDB client.`,
       incompleteTasksDetails: `More than ${this.failedRecordsResumeLimit} defined limit records to show. Check steps db using a LevelDB client.`,
     };
-    persistanceContext.generateExecutionResume(output);
+    this.persistanceContext.generateExecutionResume(output);
+  }
+
+  /**
+   * Set the persistance context.
+   * @param context The persistance context.
+   */
+  public setPersistanceContext(context: PersistanceContext) {
+    this.persistanceContext = context;
+  }
+
+  /**
+   * Get a nice object to log in debugger.
+   */
+  getNiceObjectToLog(): Object {
+    return {
+      batchName: this.batchName,
+      loadedRecords: this.loadedRecords,
+      lastLoadedRecordId: this.lastLoadedRecordId,
+      failedRecords: this.failedRecords,
+      execType: this.execType,
+      status: this.status,
+      startDate: this.startDateISO,
+      endDate: this.endDateISO,
+      duration: `${this.duration} seconds`,
+    };
   }
 }

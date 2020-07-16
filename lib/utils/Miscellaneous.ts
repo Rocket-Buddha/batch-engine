@@ -27,13 +27,17 @@
 /** ********************************************************************* */
 
 import { BATCH_STATUS } from '../core/BATCH_STATUS';
-
+// Debug log, used to debug features using env var NODE_DEBUG.
 const debuglog = require('util').debuglog('[BATCH-ENGINE:UTILS]');
 
 /**
  * Miscellaneous class with static functions.
  */
 export default class MiscellaneousUtils {
+  /**
+   * Returns a BATCH_STATUS from a string.
+   * @param str The string equivalent to the BATCH_STATUS.
+   */
   static getBatchStatusFromString(str: String): BATCH_STATUS {
     switch (str) {
       case BATCH_STATUS.FINISHED_SUCCESSFULLY:

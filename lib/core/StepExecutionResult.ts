@@ -26,7 +26,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /** ********************************************************************* */
 
-import persistanceContext from '../persistence/PersistanceContext';
+import PersistanceContext from '../persistence/PersistanceContext';
 // Lib to get an UUID (https://en.wikipedia.org/wiki/Universally_unique_identifier).
 const uuidv1 = require('uuid/v1');
 
@@ -68,7 +68,11 @@ export class StepExecutionResult {
   // If there was an error, It will be here.
   private error!: Error;
 
+  // Flag to know if this is the last one step in the chain.
   private isLastOne!: Boolean;
+
+  // Attribute to save the job persistance context.
+  private persistanceContext!: PersistanceContext;
 
   /**
    * Constructor of step execution result.
@@ -78,6 +82,7 @@ export class StepExecutionResult {
    * @param dependentRecords The dependent records of the step.
    * @param previousStepPayloadAcc The accumulated payload.
    * @param outputPayload  The output payload.
+   * @param persistanceContext BatchJob persistance context.
    */
   constructor(stepName: String,
     stepNumber: number,
@@ -85,7 +90,8 @@ export class StepExecutionResult {
     dependentRecords: Array<String>,
     previousStepPayloadAcc: Array<Object>,
     outputPayload: Object | null,
-    isLastOne: Boolean) {
+    isLastOne: Boolean,
+    persistanceContext: PersistanceContext) {
     this.stepName = stepName;
     this.stepNumber = stepNumber;
     this.stepResultStatus = stepState;
@@ -93,6 +99,7 @@ export class StepExecutionResult {
     this.accPayload = previousStepPayloadAcc;
     this.outputPayload = outputPayload;
     this.isLastOne = isLastOne;
+    this.persistanceContext = persistanceContext;
   }
 
   /**
@@ -174,18 +181,27 @@ export class StepExecutionResult {
    */
   public async updateAddingStepExecResult() {
     this.id = uuidv1();
-    persistanceContext.putStepResult(this.getStepNumber,
-      this.getId,
+    this.persistanceContext.putStepResult(this.getId,
       JSON.stringify(this.getNiceObjectToLogStepResult()));
     if (this.stepResultStatus === STEP_RESULT_STATUS.SUCCESSFUL
       && this.isLastOne === true) {
       for (let i = 0; i < this.getDependentRecords.length; i += 1) {
-        persistanceContext.delRecordStatus(this.getDependentRecords[i]);
+        const stepResult = this.persistanceContext.getRecordStatus(this.getDependentRecords[i]);
+        if (stepResult !== null
+          && stepResult !== undefined) {
+          this.persistanceContext.delStepResultKey(stepResult.id);
+        }
+        this.persistanceContext.delRecordStatus(this.getDependentRecords[i]);
       }
     } else {
       for (let i = 0; i < this.getDependentRecords.length; i += 1) {
-        persistanceContext.putRecordStatus(this.getDependentRecords[i],
-          JSON.stringify(this.getNiceObjectToLogRecord()));
+        const stepResult = this.persistanceContext.getRecordStatus(this.getDependentRecords[i]);
+        if (stepResult !== null
+          && stepResult !== undefined) {
+          this.persistanceContext.delStepResultKey(stepResult.id);
+        }
+        this.persistanceContext.putRecordStatus(this.getDependentRecords[i],
+          this.getNiceObjectToLogRecord());
       }
     }
   }

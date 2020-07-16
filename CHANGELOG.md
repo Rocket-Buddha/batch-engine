@@ -13,7 +13,6 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
   - Concurrency control API.
   - Client error handling API.
   - Batch execution status report.
-  - Recovery API.
   - Retry API.
   - Batch execution resume.
 - Debug Features.

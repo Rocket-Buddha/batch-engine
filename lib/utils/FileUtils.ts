@@ -90,6 +90,11 @@ export default class FileUtils {
     });
   }
 
+  /**
+   * Method used to generate an execution resume when the batch finish.
+   * @param filePath The output file path.
+   * @param output The object to be put in the file.
+   */
   public static generateExecutionResume(filePath: string, output: Object) {
     fs.writeFileSync(filePath, output);
   }
