@@ -1,0 +1,57 @@
+{
+  "scripts": {
+    "lint": "./node_modules/eslint/bin/eslint.js ./ --ext .ts",
+    "build": "./node_modules/typescript/bin/tsc",
+    "test": "./node_modules/mocha/bin/mocha ./test/unit/ --recursive"
+  },
+  "name": "batch-engine",
+  "version": "1.0.0-alpha10",
+  "description": "Ultra-lightweight, asynchronous and fault-tolerant batch engine for file processing with concurrency control.",
+  "keywords": [
+    "batch",
+    "processor",
+    "engine",
+    "framework"
+  ],
+  "homepage": "https://github.com/Rocket-Buddha/batch-engine.git",
+  "bugs": {
+    "url": "https://github.com/Rocket-Buddha/batch-engine/issues",
+    "email": "andres.julian.lusi@gmail.com"
+  },
+  "main": "index.js",
+  "author": {
+    "name": "Andres Lusi",
+    "email": "andres.julian.lusi@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rocket-Buddha/batch-engine.git"
+  },
+  "contributors": [
+    {
+      "name": "Eduardo David Angeleri",
+      "email": "angeleridavid@gmail.com"
+    }
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^13.1.1",
+    "@types/uuid": "^3.4.6",
+    "@typescript-eslint/eslint-plugin": "^2.15.0",
+    "@typescript-eslint/parser": "^2.15.0",
+    "chai": "^4.2.0",
+    "eslint": "^6.8.0",
+    "eslint-config-airbnb-typescript": "^6.3.1",
+    "eslint-plugin-import": "^2.19.1",
+    "eslint-plugin-jsx-a11y": "^6.2.3",
+    "eslint-plugin-react": "^7.17.0",
+    "eslint-plugin-react-hooks": "^1.7.0",
+    "jsdoc-to-markdown": "^6.0.1",
+    "mocha": "^7.0.0",
+    "typescript": "^3.7.4"
+  },
+  "dependencies": {
+    "level": "^6.0.0",
+    "uuid": "3.3.3"
+  }
+}
